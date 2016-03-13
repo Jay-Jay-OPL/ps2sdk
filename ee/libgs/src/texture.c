@@ -21,6 +21,7 @@ extern QWORD GsPrimWorkArea[];
 int GsLoadImage(const void *source_addr, GS_IMAGE *dest)
 {
 	int i;
+	const unsigned char *pTexSrc;
 	unsigned int current, max, remainder, img_qwc;
 	QWORD *p;
 
@@ -47,7 +48,7 @@ int GsLoadImage(const void *source_addr, GS_IMAGE *dest)
 	}
 
 	p=UNCACHED_SEG(GsPrimWorkArea);
-	gs_setGIF_TAG(((GS_GIF_TAG*)&p[0]), 4,1,0,0,0,0,1,0x0e);
+	gs_setGIF_TAG(((GS_GIF_TAG*)&p[0]), 4,1,0,0,GS_GIF_PACKED,1,gif_rd_ad);
 	gs_setR_BITBLTBUF(((GS_R_BITBLTBUF*)&p[1]),0,0,0,dest->vram_addr,dest->vram_width,dest->psm);
 	gs_setR_TRXPOS(((GS_R_TRXPOS*)&p[2]), 0,0,dest->x,dest->y,0);
 	gs_setR_TRXREG(((GS_R_TRXREG*)&p[3]), dest->width,dest->height);
@@ -60,21 +61,22 @@ int GsLoadImage(const void *source_addr, GS_IMAGE *dest)
 	max		= img_qwc / 16384;
 	remainder	= img_qwc % 16384;
 	current		= 16384;
+	pTexSrc = (const unsigned char *)source_addr;
 	for(i=0;i<max;i++)
 	{
 		//1st we signal gs we are about to send
 		//16384 qwords
 
-		gs_setGIF_TAG(((GS_GIF_TAG *)&p[0]), current,1,0,0,0,2,0,0x00);
+		gs_setGIF_TAG(((GS_GIF_TAG *)&p[0]), current,1,0,0,GS_GIF_IMAGE,0,0x00);
 
 		GsDmaSend(GsPrimWorkArea, 1);
 		GsDmaWait();
 
 		//we now send 16384 more qwords
-		GsDmaSend(source_addr, current);
+		GsDmaSend(pTexSrc, current);
 		GsDmaWait();
 
-		(unsigned char *)source_addr += current*16;
+		pTexSrc += current*16;
 	}
 
 	//transfer the rest if we have left overs
@@ -83,13 +85,13 @@ int GsLoadImage(const void *source_addr, GS_IMAGE *dest)
 	if(current)
 	{
 		// we signal are about to send whats left
-		gs_setGIF_TAG(((GS_GIF_TAG *)&p[0]), current,1,0,0,0,2,0,0x00);
+		gs_setGIF_TAG(((GS_GIF_TAG *)&p[0]), current,1,0,0,GS_GIF_IMAGE,0,0x00);
 
 		GsDmaSend(GsPrimWorkArea, 1);
 		GsDmaWait();
 
 		//send data leftover
-		GsDmaSend(source_addr, current);
+		GsDmaSend(pTexSrc, current);
 		GsDmaWait();
 	}
 

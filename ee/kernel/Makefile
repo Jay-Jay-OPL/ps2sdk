@@ -6,19 +6,17 @@
 # Licenced under Academic Free License version 2.0
 # Review ps2sdk README & LICENSE files for further details.
 #
-# $Id$
-
-
-LIBSYSCALL_LIB = lib/libsyscall.a
-EE_LIB = lib/libkernel.a
 
 EE_OBJS_DIR = obj/
 EE_LIB_DIR = lib/
 EE_SRC_DIR = src/
 EE_INC_DIR = include/
 
+LIBSYSCALL_LIB = $(EE_LIB_DIR)libsyscall.a
+EE_LIB = $(EE_LIB_DIR)libkernel.a
+
 SIFCMD_OBJS = sif_cmd_send.o _sif_cmd_int_handler.o sif_cmd_main.o \
-	sif_cmd_addhandler.o sif_sreg_get.o
+	sif_cmd_client.o sif_cmd_remove_cmdhandler.o sif_sreg_get.o
 SIFCMD_OBJS := $(SIFCMD_OBJS:%=$(EE_OBJS_DIR)%)
 
 SIFRPC_OBJS = SifBindRpc.o SifCallRpc.o SifRpcGetOtherData.o \
@@ -110,7 +108,7 @@ KERNEL_OBJS = ResetEE.o SetGsCrt.o Exit.o LoadExecPS2.o ExecPS2.o \
 	GetOsdConfigParam2.o GsGetIMR.o iGsGetIMR.o GsPutIMR.o iGsPutIMR.o \
 	SetPgifHandler.o SetVSyncFlag.o SetSyscall.o SifDmaStat.o iSifDmaStat.o \
 	SifSetDma.o iSifSetDma.o SifSetDChain.o iSifSetDChain.o SifSetReg.o \
-	SifGetReg.o ExecOSD.o Deci2Call.o PSMode.o MachineType.o GetMemorySize.o _InitTLB.o \
+	SifGetReg.o ExecOSD.o Deci2Call.o PSMode.o MachineType.o GetMemorySize.o _GetGsDxDyOffset.o _InitTLB.o \
 	SifWriteBackDCache.o _SyncDCache.o _InvalidDCache.o __errno.o errno.o \
 	strncpy.o strlen.o memcpy.o memset.o __syscall.o
 
@@ -174,13 +172,16 @@ $(EE_OBJS_DIR)tibfunc.o: $(EE_SRC_DIR)tlbfunc.c $(EE_SRC_DIR)tlbsrc_bin.c
 	$(EE_C_COMPILE) $< -c -o $@
 
 clean:
-	rm -fr $(EE_OBJS_DIR) $(EE_LIB_DIR)
+	rm -r -f $(EE_OBJS_DIR) $(EE_LIB_DIR)
 
 include $(PS2SDKSRC)/Defs.make
 include $(PS2SDKSRC)/ee/Rules.make
 include $(PS2SDKSRC)/ee/Rules.release
 
-release: release-dirs release-include
+release:
+	$(ECHO) Installing $(LIBSYSCALL_LIB) into $(PS2SDK)/ee/lib
+	$(ECHO) Installing $(EE_LIB) into $(PS2SDK)/ee/lib
+	$(ECHO) Installing *.erl into $(PS2SDK)/ee/lib
 	cp -f $(LIBSYSCALL_LIB) $(PS2SDK)/ee/lib
 	cp -f $(EE_LIB) $(PS2SDK)/ee/lib
 	cp -f $(EE_LIB:%.a=%.erl) $(PS2SDK)/ee/lib
