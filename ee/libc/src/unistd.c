@@ -6,10 +6,13 @@
 # Copyright 2001-2005, ps2dev - http://www.ps2dev.org
 # Licenced under Academic Free License version 2.0
 # Review ps2sdk README & LICENSE files for further details.
-#
-# $Id$
-# unistd implementation
 */
+
+/**
+ * @file
+ * unistd implementation
+ */
+
 #include <unistd.h>
 #include <sys/stat.h>
 #include <string.h>
@@ -74,6 +77,8 @@ static void _sleep_waker(s32 alarm_id, u16 time, void *arg2)
         iSignalSema(sd->s);
     else
         iSetAlarm(HSYNC_COUNT, _sleep_waker, arg2);
+
+    ExitHandler();
 }
 
 unsigned int sleep(unsigned int seconds)

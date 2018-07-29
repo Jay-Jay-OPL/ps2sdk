@@ -7,18 +7,18 @@
 # Licenced under Academic Free License version 2.0
 # Review ps2sdk README & LICENSE files for further details.
 #
-# $Id$
 # PFS bitmap manipulation routines
 */
 
 #include <errno.h>
 #include <stdio.h>
+#include <limits.h>
 
 #include "pfs-opt.h"
 #include "libpfs.h"
 
 extern u32 pfsMetaSize;
-extern int pfsBlockSize;
+extern u32 pfsBlockSize;
 
 u32 pfsBitsPerBitmapChunk = 8192; // number of bitmap bits in each bitmap data chunk (1024 bytes)
 
@@ -40,26 +40,28 @@ void pfsBitmapAllocFree(pfs_cache_t *clink, u32 operation, u32 subpart, u32 chun
 {
 	int result;
 	u32 sector, bit;
+	u32 *bitmapWord, *bitmapEnd;
 
 	while (clink)
 	{
-		for ( ; index < (pfsMetaSize / 4) && count; index++, _bit = 0)
+		bitmapEnd = (u32*)&((u8*)clink->u.bitmap)[pfsMetaSize];
+		for (bitmapWord = &clink->u.bitmap[index]; (bitmapWord < bitmapEnd) && count; bitmapWord++, _bit = 0)
 		{
 			for (bit = _bit; bit < 32 && count; bit++, count--)
 			{
 				if(operation == PFS_BITMAP_ALLOC)
 				{
-					if (clink->u.bitmap[index] & (1 << bit))
+					if (*bitmapWord & (1 << bit))
 						PFS_PRINTF(PFS_DRV_NAME": Error: Tried to allocate used block!\n");
 
-					clink->u.bitmap[index] |= (1 << bit);
+					*bitmapWord |= (1 << bit);
 				}
 				else
 				{
-					if ((clink->u.bitmap[index] & (1 << bit))==0)
+					if ((*bitmapWord & (1 << bit))==0)
 						PFS_PRINTF(PFS_DRV_NAME": Error: Tried to free unused block!\n");
 
-					clink->u.bitmap[index] &= ~(1 << bit);
+					*bitmapWord &= ~(1 << bit);
 				}
 			}
 		}
@@ -82,18 +84,20 @@ void pfsBitmapAllocFree(pfs_cache_t *clink, u32 operation, u32 subpart, u32 chun
 }
 
 // Attempts to allocate 'count' more continuous zones for 'bi'
-int pfsBitmapAllocateAdditionalZones(pfs_mount_t *pfsMount, pfs_blockinfo *bi, u32 count)
+int pfsBitmapAllocateAdditionalZones(pfs_mount_t *pfsMount, pfs_blockinfo_t *bi, u32 count)
 {
 	int result;
 	pfs_bitmapInfo_t info;
 	pfs_cache_t *c;
 	int res=0;
+	u32 bitmapMax;
+	u32 *bitmapWord, *bitmapEnd;
 
 	pfsBitmapSetupInfo(pfsMount, &info, bi->subpart, bi->number+bi->count);
 
 	// Make sure we're not trying to allocate more than is possible
-	if (65535-bi->count < count)
-		count=65535-bi->count;
+	if ((u32)USHRT_MAX - bi->count < count)
+		count = USHRT_MAX - bi->count;
 
 	// Loop over each bitmap chunk (each is 1024 bytes in size) until either we have allocated
 	// the requested amount of blocks, or until we have run out of space on the current partition
@@ -108,11 +112,13 @@ int pfsBitmapAllocateAdditionalZones(pfs_mount_t *pfsMount, pfs_blockinfo *bi, u
 
 		// Read the bitmap chunk from the hdd
 		c=pfsCacheGetData(pfsMount, bi->subpart, sector, PFS_CACHE_FLAG_BITMAP, &result);
-		if (c==0)break;
+		if (c==NULL)break;
 
 		// Loop over each 32-bit word in the current bitmap chunk until
 		// we find a used zone or we've allocated all the zones we need
-		while ((info.index < (info.chunk==info.partitionChunks ? info.partitionRemainder / 32 : pfsMetaSize / 4)) && count)
+		bitmapMax = info.chunk==info.partitionChunks ? info.partitionRemainder / 8 : pfsMetaSize;
+		bitmapEnd = (u32*)&((u8*)c->u.bitmap)[bitmapMax];
+		for (bitmapWord=&c->u.bitmap[info.index]; (bitmapWord < bitmapEnd) && count;  bitmapWord++, info.bit=0)
 		{
 			// Loop over each of the 32 bits in the current word from the current bitmap chunk,
 			// trying to allocate the requested number of zones
@@ -120,7 +126,7 @@ int pfsBitmapAllocateAdditionalZones(pfs_mount_t *pfsMount, pfs_blockinfo *bi, u
 			{
 				// We only want to allocate a continuous area, so if we come
 				// accross a used zone bail
-				if (c->u.bitmap[info.index] & (1<<info.bit))
+				if (*bitmapWord & (1<<info.bit))
 				{
 					pfsCacheFree(c);
 					goto exit;
@@ -128,13 +134,10 @@ int pfsBitmapAllocateAdditionalZones(pfs_mount_t *pfsMount, pfs_blockinfo *bi, u
 
 				// If the current bit in the bitmap is marked as free, mark it was used
 				res++;
-				c->u.bitmap[info.index] |= 1<<info.bit;
+				*bitmapWord |= 1<<info.bit;
 				info.bit++;
 				c->flags |= PFS_CACHE_FLAG_DIRTY;
 			}
-
-			info.index++;
-			info.bit=0;
 		}
 		pfsCacheFree(c);
 		info.index=0;
@@ -150,15 +153,15 @@ exit:
 
 // Searches for 'amount' free zones, starting from the position specified in 'bi'.
 // Returns 1 if allocation was successful, otherwise 0.
-int pfsBitmapAllocZones(pfs_mount_t *pfsMount, pfs_blockinfo *bi, u32 amount)
+int pfsBitmapAllocZones(pfs_mount_t *pfsMount, pfs_blockinfo_t *bi, u32 amount)
 {
 	pfs_bitmapInfo_t info;
 	int result;
 	u32 startBit = 0, startPos = 0, startChunk = 0, count = 0;
 	u32 sector;
 	pfs_cache_t *bitmap;
-	u32 *bitmapEnd, *bitmapWord;
-	u32 i;
+	u32 *bitmapWord, *bitmapEnd;
+	u32 i, bitmapMax;
 
 	pfsBitmapSetupInfo(pfsMount, &info, bi->subpart, bi->number);
 
@@ -174,10 +177,9 @@ int pfsBitmapAllocZones(pfs_mount_t *pfsMount, pfs_blockinfo *bi, u32 amount)
 		if(bitmap==0)
 			return 0;
 
-		bitmapEnd=bitmap->u.bitmap +
-			(info.chunk == info.partitionChunks ? info.partitionRemainder / 32 : pfsMetaSize / 4);
-
-		for (bitmapWord=bitmap->u.bitmap + info.index; bitmapWord < bitmapEnd; info.bit=0, bitmapWord++)
+		bitmapMax = info.chunk == info.partitionChunks ? info.partitionRemainder / 8 : pfsMetaSize;
+		bitmapEnd = (u32*)&((u8*)bitmap->u.bitmap)[bitmapMax];
+		for (bitmapWord=&bitmap->u.bitmap[info.index]; bitmapWord < bitmapEnd; info.bit=0, bitmapWord++)
 		{
 			for (i=info.bit; i < 32; i++)
 			{
@@ -196,7 +198,7 @@ int pfsBitmapAllocZones(pfs_mount_t *pfsMount, pfs_blockinfo *bi, u32 amount)
 						if (count < bi->count)
 							bi->count=count;
 
-						if (bitmap->sector != (startChunk + (1 << pfsMount->inode_scale)))
+						if (bitmap->block != (startChunk + (1 << pfsMount->inode_scale)))
 						{
 							pfsCacheFree(bitmap);
 							sector = (1 << pfsMount->inode_scale) + startChunk;
@@ -223,21 +225,22 @@ int pfsBitmapAllocZones(pfs_mount_t *pfsMount, pfs_blockinfo *bi, u32 amount)
 // Searches for 'max_count' free zones over all the partitions, and
 // allocates them. Returns 0 on success, -ENOSPC if the zones could
 // not be allocated.
-int pfsBitmapSearchFreeZone(pfs_mount_t *pfsMount, pfs_blockinfo *bi, u32 max_count)
+int pfsBitmapSearchFreeZone(pfs_mount_t *pfsMount, pfs_blockinfo_t *bi, u32 max_count)
 {
 	u32 num, count, n;
 
 	num = pfsMount->num_subs + 1;
 
-	if (bi->subpart > pfsMount->num_subs)
+	if (bi->subpart >= num)
 		bi->subpart = 0;
 	if (bi->number)
 		num = pfsMount->num_subs + 2;
 
 	count = max_count < 33 ? max_count : 32;		//min(max_count, 32)
-	count = count < bi->count ? bi->count : count;	//max(count, bi->count)
-													// => count = bound(bi->count, 32);
-	for(; num >= 0; num--)
+	if(count < bi->count)
+		count = bi->count;				//max(count, bi->count)
+								// => count = bound(bi->count, 32);
+	for(--num; num >= 0; num--)
 	{
 		for (n = count; n; n /= 2)
 		{
@@ -260,7 +263,7 @@ int pfsBitmapSearchFreeZone(pfs_mount_t *pfsMount, pfs_blockinfo *bi, u32 max_co
 }
 
 // De-allocates the block segment 'bi' in the bitmaps
-void pfsBitmapFreeBlockSegment(pfs_mount_t *pfsMount, pfs_blockinfo *bi)
+void pfsBitmapFreeBlockSegment(pfs_mount_t *pfsMount, pfs_blockinfo_t *bi)
 {
 	pfs_bitmapInfo_t info;
 	pfs_cache_t *clink;
@@ -296,7 +299,7 @@ int pfsBitmapCalcFreeZones(pfs_mount_t *pfsMount, int sub)
 	while (((info.partitionRemainder!=0) && (info.chunk<info.partitionChunks+1)) ||
 	       ((info.partitionRemainder==0) && (info.chunk<info.partitionChunks)))
 	{
-		bitmapSize = info.chunk==info.partitionChunks ? info.partitionRemainder>>3 : pfsMetaSize;
+		bitmapSize = info.chunk==info.partitionChunks ? info.partitionRemainder / 8 : pfsMetaSize;
 
 		sector = (1<<pfsMount->inode_scale) + info.chunk;
 		if (sub==0)
@@ -346,7 +349,7 @@ void pfsBitmapShow(pfs_mount_t *pfsMount)
 
 			PFS_PRINTF(PFS_DRV_NAME": Zone show: pn %ld, bn %ld, bitcnt %ld\n", pn, info.chunk, bitcnt);
 
-			for(i=0; (i < (1<<pfsBlockSize)) && ((i * 512) < (bitcnt / 8)); i++)
+			for(i=0; (i < (u32)(1<<pfsBlockSize)) && ((i * 512) < (bitcnt / 8)); i++)
 				pfsPrintBitmap(clink->u.bitmap+128*i);
 
 			pfsCacheFree(clink);
@@ -365,7 +368,7 @@ void pfsBitmapFreeInodeBlocks(pfs_cache_t *clink)
 	for(i=0;i < clink->u.inode->number_data; i++)
 	{
 		u32 index = pfsFixIndex(i);
-		pfs_blockinfo *bi=&clink->u.inode->data[index];
+		pfs_blockinfo_t *bi=&clink->u.inode->data[index];
 		int err;
 
 		if(i!=0) {

@@ -6,16 +6,19 @@
 # Copyright 2001-2004, ps2dev - http://www.ps2dev.org
 # Licenced under Academic Free License version 2.0
 # Review ps2sdk README & LICENSE files for further details.
-#
-# $Id$
-# String function prototypes
 */
 
-#ifndef _STRING_H
-#define _STRING_H
+/**
+ * @file
+ * String function prototypes
+ */
+
+#ifndef __STRING_H__
+#define __STRING_H__
 
 #include <stddef.h>
 #include <stdarg.h>
+#include <ctype.h>
 
 /* The maximum length of a string within PS2Lib.  */
 #define PS2LIB_STR_MAX	4096
@@ -23,7 +26,6 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-
 
 /* ASM String functions by Jeff Johnston of Cygnus Solutions */
 void *	memchr(const void *, int, size_t);
@@ -50,25 +52,25 @@ char *  strpbrk(const char *s, const char *accept);
 size_t  strspn(const char *s, const char *accept);
 size_t  strcspn(const char *s, const char *reject);
 
-static __inline__ int strcoll(const char *s1, const char *s2) { return strcmp(s1, s2); }
-static __inline__ size_t strxfrm(char *dest, const char *src, size_t n) { strncpy(dest, src, n); return n; }
+static inline int strcoll(const char *s1, const char *s2) { return strcmp(s1, s2); }
+static inline size_t strxfrm(char *dest, const char *src, size_t n) { strncpy(dest, src, n); return n; }
 
 char *  strerror(int);
 
-// copies ascii string to sjis string
-//
-// args:    dest sjis string buffer
-//          source ascii string buffer
-// returns: length of ascii string copied
+/** copies ascii string to sjis string
+ * @param sjis_buff dest sjis string buffer
+ * @param ascii_buff source ascii string buffer
+ * @return length of ascii string copied
+ */
 int strcpy_sjis(short* sjis_buff, const char* ascii_buff);
 
-// copies sjis string to ascii string
-//
-// args:    dest ascii string buffer
-//          source sjis string buffer
-// returns: length of sjis string copied
+/** copies sjis string to ascii string
+ *
+ * @param ascii_buff dest ascii string buffer
+ * @param sjis_buff source sjis string buffer
+ * @return length of sjis string copied
+ */
 int strcpy_ascii(char* ascii_buff, const short* sjis_buff);
-
 
 /* C String functions by Hiryu (A.Lee) */
 #define stricmp strcasecmp
@@ -85,17 +87,14 @@ char *	strstr(const char *, const char *);
 char * strupr(char *);
 char * strlwr(char *);
 
-static __inline__ void bzero(void * p, size_t n) { memset(p, 0, n); }
-static __inline__ void bcopy(const void * s, void * d, size_t n) { memcpy(d, s, n); }
-static __inline__ int bcmp(const void * s1, const void * s2, size_t n) { return memcmp(s1, s2, n); }
-static __inline__ char * index(const char * s, int c) { return strchr(s, c); }
-static __inline__ char * rindex(const char * s, int c) { return strrchr(s, c); }
-
-/* Backward compatibility... */
-#include <ctype.h>
+static inline void bzero(void * p, size_t n) { memset(p, 0, n); }
+static inline void bcopy(const void * s, void * d, size_t n) { memcpy(d, s, n); }
+static inline int bcmp(const void * s1, const void * s2, size_t n) { return memcmp(s1, s2, n); }
+static inline char * index(const char * s, int c) { return strchr(s, c); }
+static inline char * rindex(const char * s, int c) { return strrchr(s, c); }
 
 #ifdef __cplusplus
 }
 #endif
 
-#endif	// _STRING_H
+#endif /* __STRING_H__ */

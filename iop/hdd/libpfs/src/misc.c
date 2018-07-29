@@ -7,17 +7,24 @@
 # Licenced under Academic Free License version 2.0
 # Review ps2sdk README & LICENSE files for further details.
 #
-# $Id$
 # Miscellaneous routines
 */
 
 #include <errno.h>
 #include <stdio.h>
 #include <iomanX.h>
+#ifdef _IOP
 #include <intrman.h>
 #include <sysmem.h>
 #include <sysclib.h>
+#include <thbase.h>
 #include <cdvdman.h>
+#else
+#include <string.h>
+#include <malloc.h>
+#include <time.h>
+#endif
+#include <ctype.h>
 #include <hdd-ioctl.h>
 
 #include "pfs-opt.h"
@@ -28,6 +35,7 @@
 
 void *pfsAllocMem(int size)
 {
+#ifdef _IOP
 	int intrStat;
 	void *mem;
 
@@ -36,42 +44,76 @@ void *pfsAllocMem(int size)
 	CpuResumeIntr(intrStat);
 
 	return mem;
+#else
+	return malloc(size);
+#endif
 }
 
 void pfsFreeMem(void *buffer)
 {
+#ifdef _IOP
 	int OldState;
 
 	CpuSuspendIntr(&OldState);
 	FreeSysMemory(buffer);
 	CpuResumeIntr(OldState);
+#else
+	free(buffer);
+#endif
 }
 
-int pfsGetTime(pfs_datetime *tm)
+int pfsGetTime(pfs_datetime_t *tm)
 {
+#ifdef _IOP
+	int ret, i;
 	sceCdCLOCK	cdtime;
-	static pfs_datetime timeBuf={
-		0, 0x0D, 0x0E, 0x0A, 0x0D, 1, 2003	// used if can not get time...
+	static pfs_datetime_t timeBuf={
+		0, 7, 6, 5, 4, 3, 2000	// used if can not get time...
 	};
 
-	if(sceCdReadClock(&cdtime)!=0 && cdtime.stat==0)
+	for(i = 0; i < 20; i++)
 	{
-		timeBuf.sec=btoi(cdtime.second);
-		timeBuf.min=btoi(cdtime.minute);
-		timeBuf.hour=btoi(cdtime.hour);
-		timeBuf.day=btoi(cdtime.day);
-		timeBuf.month=btoi(cdtime.month & 0x7F);	//The old CDVDMAN sceCdReadClock() function does not automatically file off the highest bit.
-		timeBuf.year=btoi(cdtime.year) + 2000;
+		ret = sceCdReadClock(&cdtime);
+
+		if(ret!=0 && cdtime.stat==0)
+		{
+			timeBuf.sec=btoi(cdtime.second);
+			timeBuf.min=btoi(cdtime.minute);
+			timeBuf.hour=btoi(cdtime.hour);
+			timeBuf.day=btoi(cdtime.day);
+			timeBuf.month=btoi(cdtime.month & 0x7F);	//The old CDVDMAN sceCdReadClock() function does not automatically file off the highest bit.
+			timeBuf.year=btoi(cdtime.year) + 2000;
+			break;
+		} else {
+			if(!(cdtime.stat & 0x80))
+				break;
+		}
+
+		DelayThread(100000);
 	}
-	memcpy(tm, &timeBuf, sizeof(pfs_datetime));
+	memcpy(tm, &timeBuf, sizeof(pfs_datetime_t));
+#else
+	time_t rawtime;
+	struct tm * timeinfo;
+	time (&rawtime);
+	timeinfo=localtime (&rawtime);
+
+	tm->sec=timeinfo->tm_sec;
+	tm->min=timeinfo->tm_min;
+	tm->hour=timeinfo->tm_hour;
+	tm->day=timeinfo->tm_mday;
+	tm->month=timeinfo->tm_mon;
+	tm->year=timeinfo->tm_year+1900;
+#endif
+
 	return 0;
 }
 
-int pfsFsckStat(pfs_mount_t *pfsMount, pfs_super_block *superblock,
+int pfsFsckStat(pfs_mount_t *pfsMount, pfs_super_block_t *superblock,
 	u32 stat, int mode)
 {	// mode 0=set flag, 1=remove flag, else check stat
 
-	if(pfsMount->blockDev->transfer(pfsMount->fd, superblock, 0, PFS_BLOCKSIZE, 1,
+	if(pfsMount->blockDev->transfer(pfsMount->fd, superblock, 0, PFS_SUPER_SECTOR, 1,
 		PFS_IO_MODE_READ)==0)
 	{
 		switch(mode)
@@ -85,14 +127,14 @@ int pfsFsckStat(pfs_mount_t *pfsMount, pfs_super_block *superblock,
 			default/*PFS_MODE_CHECK_FLAG*/:
 				return 0 < (superblock->pfsFsckStat & stat);
 		}
-		pfsMount->blockDev->transfer(pfsMount->fd, superblock, 0, PFS_BLOCKSIZE, 1,
+		pfsMount->blockDev->transfer(pfsMount->fd, superblock, 0, PFS_SUPER_SECTOR, 1,
 			PFS_IO_MODE_WRITE);
 		pfsMount->blockDev->flushCache(pfsMount->fd);
 	}
 	return 0;
 }
 
-void pfsPrintBitmap(u32 *bitmap) {
+void pfsPrintBitmap(const u32 *bitmap) {
 	u32 i, j;
 	char a[48+1], b[16+1];
 
@@ -100,19 +142,19 @@ void pfsPrintBitmap(u32 *bitmap) {
 	for (i=0; i < 32; i++){
 		memset(a, 0, 49);
 		for (j=0; j < 16; j++){
-			char *c=(char*)bitmap+j+i*16;
+			const char *c=(const char*)bitmap+j+i*16;
 
 			sprintf(a+j*3, "%02x ", *c);
-			b[j] = ((*c>=0) && (look_ctype_table(*c) & 0x17)) ?
+			b[j] = ((*c>=0) && (isgraph(*c))) ?
 				*c : '.';
 		}
 		PFS_PRINTF("%s%s\n", a, b);
 	}
 }
 
-int pfsGetScale(int num, int size)
+u32 pfsGetScale(u32 num, u32 size)
 {
-	int scale = 0;
+	u32 scale = 0;
 
 	while((size << scale) != num)
 		scale++;
@@ -122,10 +164,10 @@ int pfsGetScale(int num, int size)
 
 u32 pfsFixIndex(u32 index)
 {
-	if(index < 114)
+	if(index < PFS_INODE_MAX_BLOCKS)
 		return index;
 
-	index -= 114;
+	index -= PFS_INODE_MAX_BLOCKS;
 	return index % 123;
 }
 
@@ -175,7 +217,7 @@ pfs_block_device_t *pfsGetBlockDeviceTable(const char *name)
 	// Loop until digit is found, then terminate string at that digit.
 	// Should then have just the device name left, minus any front spaces or trailing digits.
 	tmp = devname;
-	while(!(look_ctype_table(tmp[0]) & 0x04))
+	while(!(isdigit(tmp[0])))
 		tmp++;
 	tmp[0] = '\0';
 
@@ -197,25 +239,25 @@ static int pfsHddTransfer(int fd, void *buffer, u32 sub/*0=main 1+=subs*/, u32 s
 	t.mode=mode;
 	t.buffer=buffer;
 
-	return ioctl2(fd, APA_IOCTL2_TRANSFER_DATA, &t, 0, NULL, 0);
+	return ioctl2(fd, HIOCTRANSFER, &t, 0, NULL, 0);
 }
 
 static u32 pfsHddGetSubCount(int fd)
 {
-	return ioctl2(fd, APA_IOCTL2_NUMBER_OF_SUBS, NULL, 0, NULL, 0);
+	return ioctl2(fd, HIOCNSUB, NULL, 0, NULL, 0);
 }
 
 static u32 pfsHddGetPartSize(int fd, u32 sub/*0=main 1+=subs*/)
 {	// of a partition
-	return ioctl2(fd, APA_IOCTL2_GETSIZE, &sub, 0, NULL, 0);
+	return ioctl2(fd, HIOCGETSIZE, &sub, 0, NULL, 0);
 }
 
 static void pfsHddSetPartError(int fd)
 {
-	ioctl2(fd, APA_IOCTL2_SET_PART_ERROR, NULL, 0, NULL, 0);
+	ioctl2(fd, HIOCSETPARTERROR, NULL, 0, NULL, 0);
 }
 
 static int pfsHddFlushCache(int fd)
 {
-	return ioctl2(fd, APA_IOCTL2_FLUSH_CACHE, NULL, 0, NULL, 0);
+	return ioctl2(fd,HIOCFLUSH, NULL, 0, NULL, 0);
 }

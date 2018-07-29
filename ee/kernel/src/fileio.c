@@ -7,10 +7,12 @@
 # (c) 2003 Marcus R. Brown (mrbrown@0xd6.org)
 # Licenced under Academic Free License version 2.0
 # Review ps2sdk README & LICENSE files for further details.
-#
-# $Id$
-# EE FILE IO handling
 */
+
+/**
+ * @file
+ * EE FILE IO handling
+ */
 
 #include <tamtypes.h>
 #include <ps2lib_err.h>
@@ -41,7 +43,7 @@ enum _fio_functions {
 	FIO_F_DELDRV
 };
 
-/* Shared between _fio_read_intr and fio_read.  The updated modules shipped
+/** Shared between _fio_read_intr and fio_read.  The updated modules shipped
    with licensed games changed the size of the buffers from 16 to 64.  */
 struct _fio_read_data {
 	u32	size1;
@@ -56,6 +58,7 @@ extern int _iop_reboot_count;
 extern SifRpcClientData_t _fio_cd;
 extern int _fio_init;
 extern int _fio_block_mode;
+extern int _fio_io_sema;
 extern int _fio_completion_sema;
 extern int _fio_recv_data[512];
 extern int _fio_intr_data[32];
@@ -69,6 +72,7 @@ int _fio_recv_data[512] __attribute__((aligned(64)));
 int _fio_intr_data[32] __attribute__((aligned(64)));
 int _fio_init = 0;
 int _fio_block_mode;
+int _fio_io_sema = -1;
 int _fio_completion_sema = -1;
 #endif
 
@@ -103,6 +107,14 @@ int fioInit(void)
 	sema.option = 0;
 	_fio_completion_sema = CreateSema(&sema);
 	if (_fio_completion_sema < 0)
+		return -E_LIB_SEMA_CREATE;
+
+	//Unofficial: create a locking semaphore to prevent a thread from overwriting another thread's return status.
+	sema.init_count = 1;
+	sema.max_count = 1;
+	sema.option = 0;
+	_fio_io_sema = CreateSema(&sema);
+	if (_fio_io_sema < 0)
 		return -E_LIB_SEMA_CREATE;
 
 	_fio_init = 1;
@@ -178,6 +190,10 @@ void fioExit(void)
 		{
 			DeleteSema(_fio_completion_sema);
         	}
+		if(_fio_io_sema >= 0)
+		{
+			DeleteSema(_fio_io_sema);
+		}
 	}
 }
 #endif
@@ -196,6 +212,7 @@ int fioOpen(const char *name, int mode)
 	if ((res = fioInit()) < 0)
 		return res;
 
+	WaitSema(_fio_io_sema);
 	WaitSema(_fio_completion_sema);
 
 	arg.mode = mode;
@@ -208,10 +225,12 @@ int fioOpen(const char *name, int mode)
 		result=(_fio_block_mode == FIO_NOWAIT)?0:_fio_recv_data[0];
 	}
 	else
-	{
+	{	//Signal semaphore to avoid a deadlock if SifCallRpc fails.
+		SignalSema(_fio_completion_sema);
 		result=res;
 	}
 
+	SignalSema(_fio_io_sema);
 
 	return result;
 }
@@ -226,6 +245,7 @@ int fioClose(int fd)
 	if ((res = fioInit()) < 0)
 		return res;
 
+	WaitSema(_fio_io_sema);
 	WaitSema(_fio_completion_sema);
 
 	arg.fd = fd;
@@ -236,9 +256,12 @@ int fioClose(int fd)
 		result=arg.result;
 	}
 	else
-	{
+	{	//Signal semaphore to avoid a deadlock if SifCallRpc fails.
+		SignalSema(_fio_completion_sema);
 		result=res;
 	}
+
+	SignalSema(_fio_io_sema);
 
 	return result;
 }
@@ -277,6 +300,7 @@ int fioRead(int fd, void *ptr, int size)
 	if ((res = fioInit()) < 0)
 		return res;
 
+	WaitSema(_fio_io_sema);
 	WaitSema(_fio_completion_sema);
 
 	arg.fd      = fd;
@@ -293,9 +317,12 @@ int fioRead(int fd, void *ptr, int size)
 		result=(_fio_block_mode == FIO_NOWAIT)?0:_fio_recv_data[0];
 	}
 	else
-	{
+	{	//Signal semaphore to avoid a deadlock if SifCallRpc fails.
+		SignalSema(_fio_completion_sema);
 		result=res;
 	}
+
+	SignalSema(_fio_io_sema);
 
 	return result;
 }
@@ -318,6 +345,7 @@ int fioWrite(int fd, const void *ptr, int size)
 	if ((res = fioInit()) < 0)
 		return res;
 
+	WaitSema(_fio_io_sema);
 	WaitSema(_fio_completion_sema);
 
 	arg.fd = fd;
@@ -345,9 +373,12 @@ int fioWrite(int fd, const void *ptr, int size)
 		result=(_fio_block_mode == FIO_NOWAIT)?0:_fio_recv_data[0];
 	}
 	else
-	{
+	{	//Signal semaphore to avoid a deadlock if SifCallRpc fails.
+		SignalSema(_fio_completion_sema);
 		result=res;
 	}
+
+	SignalSema(_fio_io_sema);
 
 	return result;
 }
@@ -371,6 +402,7 @@ int fioLseek(int fd, int offset, int whence)
 	if ((res = fioInit()) < 0)
 		return res;
 
+	WaitSema(_fio_io_sema);
 	WaitSema(_fio_completion_sema);
 
 	arg.p.fd   = fd;
@@ -383,9 +415,12 @@ int fioLseek(int fd, int offset, int whence)
 		result=arg.p.result;
 	}
 	else
-	{
+	{	//Signal semaphore to avoid a deadlock if SifCallRpc fails.
+		SignalSema(_fio_completion_sema);
 		result=res;
 	}
+
+	SignalSema(_fio_io_sema);
 
 	return result;
 }
@@ -409,11 +444,14 @@ int fioIoctl(int fd, int request, void *data)
 	if ((res = fioInit()) < 0)
 		return res;
 
+	WaitSema(_fio_io_sema);
 	WaitSema(_fio_completion_sema);
 
 	arg.p.fd = fd;
 	arg.request = request;
-	memcpy(arg.data, data, 1024);
+	
+	if(data != NULL)
+		memcpy(arg.data, data, 1024);
 
 	if ((res = SifCallRpc(&_fio_cd, FIO_F_IOCTL, 0, &arg, sizeof arg,
 					&arg, 4, (void *)_fio_intr, NULL)) >= 0)
@@ -421,9 +459,12 @@ int fioIoctl(int fd, int request, void *data)
 		result=arg.p.result;
 	}
 	else
-	{
+	{	//Signal semaphore to avoid a deadlock if SifCallRpc fails.
+		SignalSema(_fio_completion_sema);
 		result=res;
 	}
+
+	SignalSema(_fio_io_sema);
 
 	return result;
 }
@@ -441,6 +482,7 @@ int fioRemove(const char *name)
 	if ((res = fioInit()) < 0)
 		return res;
 
+	WaitSema(_fio_io_sema);
 	WaitSema(_fio_completion_sema);
 
 	strncpy(arg.path, name, FIO_PATH_MAX - 1);
@@ -452,9 +494,12 @@ int fioRemove(const char *name)
 		result=arg.result;
 	}
 	else
-	{
+	{	//Signal semaphore to avoid a deadlock if SifCallRpc fails.
+		SignalSema(_fio_completion_sema);
 		result=res;
 	}
+
+	SignalSema(_fio_io_sema);
 
 	return result;
 }
@@ -472,6 +517,7 @@ int fioMkdir(const char* path)
  	if ((res = fioInit()) < 0)
 		return res;
 
+	WaitSema(_fio_io_sema);
 	WaitSema(_fio_completion_sema);
 
 	strncpy(arg.path, path, FIO_PATH_MAX - 1);
@@ -483,9 +529,12 @@ int fioMkdir(const char* path)
 		result=arg.result;
 	}
 	else
-	{
+	{	//Signal semaphore to avoid a deadlock if SifCallRpc fails.
+		SignalSema(_fio_completion_sema);
 		result=res;
 	}
+
+	SignalSema(_fio_io_sema);
 
 	return result;
 }
@@ -503,6 +552,7 @@ int fioRmdir(const char* dirname)
 	if ((res = fioInit()) < 0)
 		return res;
 
+	WaitSema(_fio_io_sema);
 	WaitSema(_fio_completion_sema);
 
 	strncpy(arg.path, dirname, FIO_PATH_MAX - 1);
@@ -514,9 +564,12 @@ int fioRmdir(const char* dirname)
 		result=arg.result;
 	}
 	else
-	{
+	{	//Signal semaphore to avoid a deadlock if SifCallRpc fails.
+		SignalSema(_fio_completion_sema);
 		result=res;
 	}
+
+	SignalSema(_fio_io_sema);
 
 	return result;
 }
@@ -580,6 +633,7 @@ int fioDopen(const char *name)
 	if ((res = fioInit()) < 0)
 		return res;
 
+	WaitSema(_fio_io_sema);
 	WaitSema(_fio_completion_sema);
 
 	strncpy(arg.name, name, FIO_PATH_MAX - 1);
@@ -591,9 +645,12 @@ int fioDopen(const char *name)
 		result=arg.result;
 	}
 	else
-	{
+	{	//Signal semaphore to avoid a deadlock if SifCallRpc fails.
+		SignalSema(_fio_completion_sema);
 		result=res;
 	}
+
+	SignalSema(_fio_io_sema);
 
 	return result;
 }
@@ -611,6 +668,7 @@ int fioDclose(int fd)
 	if ((res = fioInit()) < 0)
 		return res;
 
+	WaitSema(_fio_io_sema);
 	WaitSema(_fio_completion_sema);
 
 	arg.fd = fd;
@@ -621,9 +679,12 @@ int fioDclose(int fd)
 		result=arg.result;
 	}
 	else
-	{
+	{	//Signal semaphore to avoid a deadlock if SifCallRpc fails.
+		SignalSema(_fio_completion_sema);
 		result=res;
 	}
+
+	SignalSema(_fio_io_sema);
 
 	return result;
 }
@@ -646,6 +707,7 @@ int fioDread(int fd, fio_dirent_t *buf)
 	if ((res = fioInit()) < 0)
 		return res;
 
+	WaitSema(_fio_io_sema);
 	WaitSema(_fio_completion_sema);
 
 	arg.p.fd = fd;
@@ -660,9 +722,12 @@ int fioDread(int fd, fio_dirent_t *buf)
 		result=arg.p.result;
 	}
 	else
-	{
+	{	//Signal semaphore to avoid a deadlock if SifCallRpc fails.
+		SignalSema(_fio_completion_sema);
 		result=res;
 	}
+
+	SignalSema(_fio_io_sema);
 
 	return result;
 }
@@ -685,6 +750,7 @@ int fioGetstat(const char *name, fio_stat_t *buf)
 	if ((res = fioInit()) < 0)
 		return res;
 
+	WaitSema(_fio_io_sema);
 	WaitSema(_fio_completion_sema);
 
 	arg.p.buf = buf;
@@ -700,9 +766,12 @@ int fioGetstat(const char *name, fio_stat_t *buf)
 		result=arg.p.result;
 	}
 	else
-	{
+	{	//Signal semaphore to avoid a deadlock if SifCallRpc fails.
+		SignalSema(_fio_completion_sema);
 		result=res;
 	}
+
+	SignalSema(_fio_io_sema);
 
 	return result;
 }
@@ -726,6 +795,7 @@ int fioChstat(const char *name, fio_stat_t *buf, u32 cbit)
 	if ((res = fioInit()) < 0)
 		return res;
 
+	WaitSema(_fio_io_sema);
 	WaitSema(_fio_completion_sema);
 
 	arg.p.cbit = cbit;
@@ -739,9 +809,12 @@ int fioChstat(const char *name, fio_stat_t *buf, u32 cbit)
 		result=arg.p.result;
 	}
 	else
-	{
+	{	//Signal semaphore to avoid a deadlock if SifCallRpc fails.
+		SignalSema(_fio_completion_sema);
 		result=res;
 	}
+
+	SignalSema(_fio_io_sema);
 
 	return result;
 }
@@ -759,6 +832,7 @@ int fioFormat(const char *name)
 	if ((res = fioInit()) < 0)
 		return res;
 
+	WaitSema(_fio_io_sema);
 	WaitSema(_fio_completion_sema);
 
 	strncpy(arg.path, name, FIO_PATH_MAX - 1);
@@ -770,9 +844,12 @@ int fioFormat(const char *name)
 		result=arg.result;
 	}
 	else
-	{
+	{	//Signal semaphore to avoid a deadlock if SifCallRpc fails.
+		SignalSema(_fio_completion_sema);
 		result=res;
 	}
+
+	SignalSema(_fio_io_sema);
 
 	return result;
 }

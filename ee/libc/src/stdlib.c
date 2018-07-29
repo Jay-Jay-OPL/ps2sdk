@@ -6,10 +6,12 @@
 # Copyright 2001-2004, ps2dev - http://www.ps2dev.org
 # Licenced under Academic Free License version 2.0
 # Review ps2sdk README & LICENSE files for further details.
-#
-# $Id$
-# Stdlib's functions, without allocs (see alloc.c)
 */
+
+/**
+ * @file
+ * Stdlib's functions, without allocs (see alloc.c)
+ */
 
 #include <stdlib.h>
 #include <stdio.h>
@@ -37,17 +39,6 @@ extern unsigned int __stdlib_rand_seed;
 
 
 #ifdef F_abs
-/*
-**
-**  [func] - abs.
-**  [desc] - returns the absolute value of the integer c.
-**  [entr] - int c; the integer value.
-**  [exit] - int; the absolute value of the integer c.
-**  [prec] - none.
-**  [post] - none.
-**
-*/
-
 // shouldn't we rather put that as a macro... ?
 int abs(int c)
 {
@@ -57,18 +48,6 @@ int abs(int c)
 
 
 #ifdef F_atexit
-/*
-**
-**  [func] - atexit.
-**  [desc] - if the current amount of registered exit() functions has not
-**           been reached then registers the func parameter function to the
-**           list and returns 0. else returns non-zero.
-**  [entr] - void (*func)(void); the pointer to the exit function.
-**  [exit] - int; 0 if albe to register the func exit() function. else non-zero.
-**  [prec] - func is a valid function pointer.
-**  [post] - the atexit() function list is modified.
-**
-*/
 int atexit(void (*func)(void))
 {
   int ret;
@@ -85,18 +64,6 @@ int atexit(void (*func)(void))
 
 
 #ifdef F_atof
-/*
-**
-**  [func] - atof.
-**  [desc] - if the string s begins with a valid floating point string then
-**           returns the floating point value of the string s. else returns 0.**
-**  [entr] - const char *s; the source string pointer.
-**  [exit] - double; the floating point value of the string s. else 0.
-**  [prec] - s is a valid string pointer.
-**  [post] - none.
-*
-*/
-
 // macro... maybe ? :)
 double atof(const char *s)
 {
@@ -106,17 +73,6 @@ double atof(const char *s)
 
 
 #ifdef F_atoi
-/*
-**
-**  [func] - atoi.
-**  [desc] - if the string s begins with a valid integer then returns the
-**           integer value of the string s. else returns 0.
-**  [entr] - const char *s; the source string pointer.
-**  [exit] - int; the integer value of the string s. else 0.
-**  [prec] - s is a valid string pointer.
-**  [post] - none.
-**
-*/
 int atoi(const char *s)
 {
   int neg = 0, ret = 1;
@@ -143,17 +99,6 @@ int atoi(const char *s)
 
 
 #ifdef F_atol
-/*
-**
-**  [func] - atol.
-**  [desc] - if the string s begins with a valid long integer then returns the
-**           long integer value of the string s. else returns 0.
-**  [entr] - const char *s; the source string pointer.
-**  [exit] - int; the integer value of the string s. else 0.
-**  [prec] - s is a valid string pointer.
-**  [post] - none.
-**
-*/
 long atol(const char *s)
 {
   int  neg = 0;
@@ -181,20 +126,6 @@ long atol(const char *s)
 
 
 #ifdef F_bsearch
-/*
-**
-**  [func] - bsearch.
-**  [desc] -
-**  [entr] - const void *key; the pointer to the search key object.
-**           const void *base; the pointer to the base of the search data.
-**           size_t count; the number of elements in the search data.
-**           size_t size; the size of the search elements.
-**           int (* compare)(const void *, const void *); the pointer to the compare function.
-**  [exit] - void *;
-**  [prec] -
-**  [post] -
-**
-*/
 void *bsearch(const void *key, const void *base, size_t count, size_t size, int (* compare)(const void *, const void *))
 {
   int        comparison;
@@ -222,17 +153,6 @@ void *bsearch(const void *key, const void *base, size_t count, size_t size, int 
 
 
 #ifdef F_div
-/*
-**
-**  [func] - div.
-**  [desc] -
-**  [entr] - int n; the integer numerator.
-**           int d; the integer divisor.
-**  [exit] - div_t;
-**  [prec] - none.
-**  [post] - none.
-**
-*/
 div_t div(int n, int d)
 {
   div_t ret;
@@ -247,17 +167,6 @@ div_t div(int n, int d)
 
 
 #if 0
-/*
-**
-**  [func] - exit.
-**  [desc] - calls all the register exit() functions and returns to PlayStation2
-**           OSD.
-**  [entr] - int status; the exit status code.
-**  [exit] - this function deos not return.
-**  [prec] - none.
-**  [post] - none.
-**
-*/
 void exit(int status)
 {
   int i;
@@ -272,19 +181,6 @@ void exit(int status)
 
 
 #if 0
-/*
-**
-**  [func] - _gcvt.c
-**  [desc] -
-**  [entr] - double x;
-**           size_t n;
-**           char *buf;
-**  [exit] - char *;
-**  [prec] -
-**  [post] -
-**
-*/
-
 // why the underscore ? win32 or what ?
 // won't link anyway.
 char *_gcvt(double x, size_t n, char *buf)
@@ -337,18 +233,6 @@ char *_gcvt(double x, size_t n, char *buf)
 
 
 #ifdef F_getenv
-/*
-**
-**  [func] - getenv.
-**  [desc] - if name is an existing environment variable name then returns the
-**           poiinter to the corresponding environment variable string value.
-**           else returns NULL.
-**  [entr] - const char *name; the environment name string pointer.
-**  [exit] - char *; the ptr. to the corres. environment variable string. else NULL.
-**  [prec] - name is a valid string pointer.
-**  [post] - none.
-**
-*/
 char *getenv(const char *name)
 {
   int  i;
@@ -368,18 +252,6 @@ char *getenv(const char *name)
 
 
 #ifdef F__itoa
-/*
-**
-**  [func] - _itoa.
-**  [desc] -
-**  [entr] - int n; the integer value to convert.
-**           char *buf; the pointer to the destination memory buffer.
-**           int radix; the conversion number base.
-**  [exit] - char *; buf.
-**  [prec] - buf is a valid memory pointer.
-**  [post] - the memory pointed to by buf is modified.
-**
-*/
 char *_itoa(int n, char *buf, int radix)
 {
   char         *ret = buf;
@@ -408,16 +280,6 @@ char *_itoa(int n, char *buf, int radix)
 
 
 #ifdef F_labs
-/*
-**
-**  [func] - labs.
-**  [desc] - returns the absolute value of the long integer n.
-**  [entr] - long n; the long integer value.
-**  [exit] - long; the absolute value of the long integer n.
-**  [prec] - none.
-**  [post] - none.
-**
-*/
 long labs(long n)
 {
   return ((n >= 0) ? n : -n);
@@ -426,17 +288,6 @@ long labs(long n)
 
 
 #ifdef F_ldiv
-/*
-**
-**  [func] - ldiv.
-**  [desc] -
-**  [entr] - long n; the long integer numerator.
-**           long d; the long integer denominator.
-**  [exit] - ldiv_t;
-**  [prec] -
-**  [post] -
-**
-*/
 ldiv_t ldiv(long n, long d)
 {
   ldiv_t ret;
@@ -449,16 +300,6 @@ ldiv_t ldiv(long n, long d)
 
 
 #ifdef F_llabs
-/*
-**
-**  [func] - llabs.
-**  [desc] - returns the absolute value of the long long integer n.
-**  [entr] - long n; the long long integer value.
-**  [exit] - long; the absolute value of the long long integer n.
-**  [prec] - none.
-**  [post] - none.
-**
-*/
 long long llabs(long long n)
 {
   return ((n >= 0) ? n : -n);
@@ -467,17 +308,6 @@ long long llabs(long long n)
 
 
 #ifdef F_lldiv
-/*
-**
-**  [func] - lldiv.
-**  [desc] -
-**  [entr] - long long n; the long long integer numerator.
-**           long long d; the long long integer denominator.
-**  [exit] - ldiv_t;
-**  [prec] -
-**  [post] -
-**
-*/
 lldiv_t lldiv(long long n, long long d)
 {
   lldiv_t ret;
@@ -490,18 +320,6 @@ lldiv_t lldiv(long long n, long long d)
 
 
 #ifdef F__lltoa
-/*
-**
-**  [func] - _lltoa.
-**  [desc] -
-**  [entr] - long long n; the long long integer value to convert.
-**           char *buf; the pointer to the destination memory buffer.
-**           int radix; the conversion number base.
-**  [exit] - char *; buf.
-**  [prec] - buf is a valid memory pointer.
-**  [post] - the memory pointed to by buf is modified.
-**
-*/
 char *_lltoa(long long n, char *buf, int radix)
 {
   char         *ret = buf;
@@ -531,18 +349,6 @@ char *_lltoa(long long n, char *buf, int radix)
 
 
 #ifdef F__ltoa
-/*
-**
-**  [func] - _ltoa.
-**  [desc] -
-**  [entr] - long n; the long integer value to convert.
-**           char *buf; the pointer to the destination memory buffer.
-**           int radix; the conversion number base.
-**  [exit] - char *; buf.
-**  [prec] - buf is a valid memory pointer.
-**  [post] - the memory pointed to by buf is modified.
-**
-*/
 char *_ltoa(long n, char *buf, int radix)
 {
   char         *ret = buf;
@@ -572,18 +378,6 @@ char *_ltoa(long n, char *buf, int radix)
 
 
 #ifdef F_mblen
-/*
-**
-**  [func] - mblen.
-**  [desc] - if s is a valid multibyte character then returns the length
-**           of the multibyte character s. else returns -1.
-**  [entr] - const char *s;
-**           size_t n; the length of the multibyte character s. else 0.
-**  [exit] - int;
-**  [prec] - s is a valid string pointer.
-**  [post] - none.
-**
-*/
 int mblen(const char *s, size_t n)
 {
   return (mbtowc((wchar_t *)NULL, s, n));
@@ -592,17 +386,6 @@ int mblen(const char *s, size_t n)
 
 
 #ifdef F_mbslen
-/*
-**
-**  [func] - mbslen.
-**  [desc] - if s is a valid multibyte character string then returns the length
-**           of the multibyte character string s. else returns -1.
-**  [entr] - const char *s;
-**  [exit] - int;
-**  [prec] - s is a valid string pointer.
-**  [post] - none.
-**
-*/
 int mbslen(const char *s)
 {
   int    len;
@@ -630,28 +413,13 @@ int mbslen(const char *s)
 
 
 #ifdef F_mbstowcs
-/*
-**
-**  [func] - mbstowcs.
-**  [desc] - if s is a valid multibyte string then converts the multibyte
-**           string to a wide-character string and returns the length of
-**           the wide-character string. else returns -1.
-**  [entr] - wchar_t *ws; the destination wide-character string pointer.
-**           const char *s; the source multibyte string pointer.
-**           size_t n; the maximum number of characters to convert.
-**  [exit] - size_t; the length of the wide-character string. else -1.
-**  [prec] - ws is a valid wide-character string pointer and s is a valid
-**           string pointer.
-**  [post] - the memory pointed to by ws is modified.
-**
-*/
 size_t mbstowcs(wchar_t *ws, const char *s, size_t n)
 {
   int    len;
   size_t ret;
 
   /* convert the multibyte string to wide-character string. */
-  for (ret = 0; *s != '\0'; n--,ws++,s+=len,ret++) {
+  for (ret = 0; *s != '\0' && n > 0; n--,ws++,s+=len,ret++) {
     if ((s[0]&0x80) == 0) {
       *ws = s[0];
       len = 1;
@@ -681,23 +449,6 @@ size_t mbstowcs(wchar_t *ws, const char *s, size_t n)
 
 
 #ifdef F_mbtowc
-/*
-**
-**  [func] - mbtowc.
-**  [desc] - attempts to convert the s multi-byte character to the corresponding
-**           wide-character. if able to convert the s multi-byte character to the
-**           corresponding wide-character then stores the resulitng wide-character
-**           to the memory pointed to by wc and returns the number of bytes for
-**           the multi-byte character. else if the multi-byte character is '\0'
-**           then returns 1. else returns -1.
-**  [entr] - wchar_t *wc; the source wide-character string pointer.
-**           const char *s; the pointer to the destination multi-byte string buffer.
-**           size_t n; the number of bytes to check.
-**  [exit] - int; the number of bytes for mb char. else 1 if mb char is '\0'. else -1.
-**  [prec] - wc is a valid wchar_t pointer and s is a valid string pointer.
-**  [post] - the memory pointed to by wc is modified.
-**
-*/
 int mbtowc(wchar_t *wc, const char *s, size_t n)
 {
   int ret;
@@ -741,17 +492,6 @@ int mbtowc(wchar_t *wc, const char *s, size_t n)
 
 
 #ifdef F_rand
-/*
-**
-**  [func] - rand.
-**  [desc] - returns the random number generated from the current stdlib random
-**           seed.
-**  [entr] - none.
-**  [exit] - int; the random number generated from the current stdlib random seed.
-**  [prec] - none.
-**  [post] - the stdlib random seed is modified.
-**
-*/
 int rand(void)
 {
 // I don't agree with it...
@@ -767,22 +507,6 @@ int rand(void)
 
 
 #ifdef F_setenv
-/*
-**
-**  [func] - setenv.
-**  [desc] - if name is an existing environment variable and rewrite is non-zero
-**           then overwrites the name environment variable value with value and
-**           returns 0. else if name is not an existring environment variable and
-**           there is a free environment variable slot available then sets the
-**           name environment variable and returns 0. else returns -1.
-**  [entr] - const char *name; the environment variable name string pointer.
-**           const char *value; the environment variable value string pointer.
-**           int rewrite; the overwrite flag.
-**  [exit] - int; 0 if able to set the environment variable successfully. else -1.
-**  [prec] - name and value are valid string pointers.
-**  [post] - the name environment variable is set.
-**
-*/
 int setenv(const char *name, const char *value, int rewrite)
 {
   int done, i, ret = -1;
@@ -820,16 +544,6 @@ int setenv(const char *name, const char *value, int rewrite)
 
 
 #ifdef F_srand
-/*
-**
-**  [func] - srand.
-**  [desc] - sets the current stdlib random seed to seed.
-**  [entr] - unsigned int seed; the stdlib random seed.
-**  [exit] - none.
-**  [prec] - none.
-**  [post] - none.
-**
-*/
 void srand(unsigned int seed)
 {
   __stdlib_rand_seed = seed;
@@ -837,9 +551,13 @@ void srand(unsigned int seed)
 #endif
 
 
+#ifdef F___stdlib_environmentals
+/* stdlib environmental data variables. */
+environvariable_t    __stdlib_env[32];
+#endif
+
 #ifdef F___stdlib_internals
 /* stdlib data variables. */
-environvariable_t    __stdlib_env[32];
 void                 (* __stdlib_exit_func[32])(void);
 int                  __stdlib_exit_index = 0;
 int                  __stdlib_mb_shift = 0;
@@ -848,21 +566,6 @@ unsigned int         __stdlib_rand_seed = 92384729;
 
 
 #ifdef F_strtod
-/*
-**
-**  [func] - strtod.
-**  [desc] - if s is a valid floating point number string then converts the
-**           string to it's corresponding float point value and returns the
-**           value. else returns 0.0. if eptr is not NULL then stores the
-**           pointer to the last processed character in the string.
-**  [entr] - const char *s; the source string pointer.
-**           char **endptr; the pointer to the store string end pointer.
-**  [exit] - double; the converted 64-bit float value. else 0.0.
-**  [prec] - s is a valid string pointer and eptr is a valid string pointer
-**           pointer.
-**  [post] - the memory pointed to by eptr is modified.
-**
-*/
 double strtod(const char *s, char **eptr)
 {
   double d, ret = 0.0, sign = 1.0;
@@ -918,22 +621,6 @@ double strtod(const char *s, char **eptr)
 
 
 #ifdef F_strtol
-/*
-**
-**  [func] - strtol.
-**  [desc] - if s is a valid long integer string then converts the string to
-**           it's corresponding long integer value and returns the value. else
-**           returns the long integer huge value. if eptr is not NULL then
-**           stores the pointer to the last processed character in the string.
-**  [entr] - const char *s; the source string pointer.
-**           char **eptr; the pointer to store the string end pointer.
-**           int b; the long integer base.
-**  [exit] - long; the converted long integer value. else the long integer huge value.
-**  [prec] - s is a valid string pointer and eptr is a valid string pointer
-**           pointer.
-**  [post] - the memory pointed to by eptr is modified.
-**
-*/
 #if 0
 long strtol(const char *s, char **eptr, int b)
 {
@@ -1076,22 +763,6 @@ long strtol(const char *s, char **eptr, int b)
 
 
 #ifdef F_strtoul
-/*
-**
-**  [func] - strtoul.
-**  [desc] - if s is a valid long integer string then converts the string to
-**           it's corresponding long integer value and returns the value. else
-**           returns the long integer huge value. if eptr is not NULL then
-**           stores the pointer to the last processed character in the string.
-**  [entr] - const char *s; the source string pointer.
-**           char **eptr; the pointer to store the string end pointer.
-**           int b; the long integer base.
-**  [exit] - long; the converted long integer value. else the long integer huge value.
-**  [prec] - s is a valid string pointer and eptr is a valid string pointer
-**           pointer.
-**  [post] - the memory pointed to by eptr is modified.
-**
-*/
 #if 0
 unsigned long strtoul(const char *s, char **eptr, int b)
 {
@@ -1215,25 +886,13 @@ unsigned long strtoul(const char *nptr, char **endptr, int base)
 
 
 #ifdef F_wcstombs
-/*
-**
-**  [func] - wcstombs.
-**  [desc] -
-**  [entr] - char *s; the pointer to the destination string buffer.
-**           const wchar_t *ws; the source wide-character string pointer.
-**           size_t n; the maximum number of characters to store to s.
-**  [exit] - size_t; the length of the multibyte string. else -1.
-**  [prec] - s is a valid memory pointer and ws is a valid wide-character string.
-**  [post] - the memory pointed to s is modified.
-**
-*/
 size_t wcstombs(char *s, const wchar_t *ws, size_t n)
 {
   int            len;
   size_t         ret = 0;
   wchar_t        wc;
 
-  for (; ((wc = *ws++) != (wchar_t)'\0'); s+=len,ret+=len) {
+  for (; ((wc = *ws++) != (wchar_t)'\0') && n > 0; n-=len,s+=len,ret+=len) {
     if (wc <= 0x7F) {
       if (n >= 1) {
         s[0] = (char)wc;
@@ -1276,20 +935,6 @@ size_t wcstombs(char *s, const wchar_t *ws, size_t n)
 
 
 #ifdef F_wctomb
-/*
-**
-**  [func] - wctomb.
-**  [desc] - converts the wc wide-character to the corresponding multibyte
-**           character and stores the multi-byte character to the memory
-**           pointed to by s and returns the number of bytes used by the
-**           multi-byte character.
-**  [entr] - char *s; the pointer to the destination multi-byte character buffer.
-**           wchar_t wc; the wide-character to convert.
-**  [exit] - int; the number of bytes used by the multi-byte character.
-**  [prec] - s is a valid memory pointer.
-**  [post] - the memory pointed to by s is modified.
-**
-*/
 int wctomb(char *s, wchar_t wc)
 {
   int ret;

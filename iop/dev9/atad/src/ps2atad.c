@@ -6,14 +6,16 @@
 # Copyright (c) 2003 Marcus R. Brown <mrbrown@0xd6.org>
 # Licenced under Academic Free License version 2.0
 # Review ps2sdk README & LICENSE files for further details.
-#
-# $Id$
-# ATA device driver.
-# This module provides the low-level ATA support for hard disk drives.  It is
-# 100% compatible with its proprietary counterpart called atad.irx.
-#
-# This module also include support for 48-bit feature set (done by Clement).
 */
+
+/**
+ * @file
+ * ATA device driver.
+ * This module provides the low-level ATA support for hard disk drives, based on ATAD v2.4.
+ * It is 100% compatible with its proprietary counterpart called atad.irx.
+ *
+ * This module also include support for 48-bit feature set (done by Clement).
+ */
 
 #include <types.h>
 #include <defs.h>
@@ -38,25 +40,35 @@ IRX_ID(MODNAME, 2, 4);
 #define BANNER "ATA device driver %s - Copyright (c) 2003 Marcus R. Brown\n"
 #define VERSION "v1.2"
 
+#define ATA_XFER_MODE_PIO	0x08
+#ifdef ATA_MWDMA_MODES
+#define ATA_XFER_MODE_MDMA	0x20
+#endif
+#define ATA_XFER_MODE_UDMA	0x40
+
+#define ATA_EV_TIMEOUT	1
+#define ATA_EV_COMPLETE	2
+
 static int ata_devinfo_init = 0;
 static int ata_evflg = -1;
 
-/* Used for indicating 48-bit LBA support.  */
-static unsigned char lba_48bit[2] = {0, 0};
-
-static unsigned char Disable48bitLBA = 0;	//Please read the comments in _start().
+//Workarounds
+static u8 ata_disable_lba48 = 0;	//Please read the comments in _start().
+#ifdef ATA_GAMESTAR_WORKAROUND
+static u8 ata_gamestar_workaround = 0;
+#endif
 
 /* Local device info kept for drives 0 and 1.  */
 static ata_devinfo_t atad_devinfo[2];
 
 /* Data returned from DEVICE IDENTIFY is kept here.  Also, this is used by the
    security commands to set and unlock the password.  */
-static unsigned short int ata_param[256];
+static u16 ata_param[256];
 
 /* ATA command info.  */
 typedef struct _ata_cmd_info {
-	unsigned char command;
-	unsigned char type;
+	u8 command;
+	u8 type;
 } ata_cmd_info_t;
 
 static const ata_cmd_info_t ata_cmd_table[] = {
@@ -66,7 +78,7 @@ static const ata_cmd_info_t ata_cmd_table[] = {
 	{ATA_C_READ_SECTOR,2},
 	{ATA_C_READ_DMA_EXT,0x84},
 	{ATA_C_WRITE_SECTOR,3},
-	{ATA_C_WRITE_LONG,8},	//??? This seems to be WRITE_LONG, but the READ_LONG command isn't present (Why would Sony have only one of these two commands?). Both are obsolete too.
+	{ATA_C_WRITE_LONG,8},
 	{ATA_C_WRITE_DMA_EXT,0x84},
 	{ATA_C_CFA_WRITE_SECTORS_WITHOUT_ERASE,3},
 	{ATA_C_READ_VERIFY_SECTOR,1},
@@ -140,10 +152,14 @@ static const ata_cmd_info_t smart_cmd_table[] = {
 
 /* This is the state info tracked between ata_io_start() and ata_io_finish().  */
 typedef struct _ata_cmd_state {
-	int	type;			/* The ata_cmd_info_t type field. */
-	void	*buf;
-	unsigned int	blkcount;	/* The number of 512-byte blocks (sectors) to transfer.  */
-	int	dir;			/* DMA direction: 0 - to RAM, 1 - from RAM.  */
+	s32	type;		/* The ata_cmd_info_t type field. */
+	union {
+		void	*buf;
+		u8	*buf8;
+		u16	*buf16;
+	};
+	u32	blkcount;	/* The number of 512-byte blocks (sectors) to transfer.  */
+	s32	dir;		/* DMA direction: 0 - to RAM, 1 - from RAM.  */
 } ata_cmd_state_t;
 
 static ata_cmd_state_t atad_cmd_state;
@@ -154,32 +170,40 @@ static unsigned int ata_alarm_cb(void *unused);
 static void ata_set_dir(int dir);
 
 static void ata_pio_mode(int mode);
+#ifdef ATA_MWDMA_MODES
 static void ata_multiword_dma_mode(int mode);
+#endif
 static void ata_ultra_dma_mode(int mode);
 
-struct irx_export_table _exp_atad;
+extern struct irx_export_table _exp_atad;
 
-/*	In a modern ATAD.IRX module, the DMA ENabled bit should be set and unset from the pre and post DMA callbacks.
-	However, some of the clone adaptors don't support this properly. Since some users out there cannot tell the difference
-	between such a clone adaptor and a genuine Sony adaptor, it's probably just best to go with the design of the older ATAD modules.
-
-	Older ATAD modules have this bit set within ata_set_dir() instead.	*/
-/* static void AtadPreDmaCb(int bcr, int dir){
+//In v1.04, DMA was enabled in ata_set_dir() instead.
+static void ata_pre_dma_cb(int bcr, int dir)
+{
 	USE_SPD_REGS;
 
 	SPD_REG16(SPD_R_XFR_CTRL)|=0x80;
 }
 
-static void AtadPostDmaCb(int bcr, int dir){
+static void ata_post_dma_cb(int bcr, int dir)
+{
 	USE_SPD_REGS;
 
 	SPD_REG16(SPD_R_XFR_CTRL)&=~0x80;
-} */
+}
+
+static int ata_create_event_flag(void)
+{
+	iop_event_t event;
+
+	event.attr = EA_SINGLE;	//In v1.04, EA_MULTI was specified.
+	event.bits = 0;
+	return CreateEventFlag(&event);
+}
 
 int _start(int argc, char *argv[])
 {
 	USE_SPD_REGS;
-	iop_event_t event;
 	int res = 1;
 
 	printf(BANNER, VERSION);
@@ -189,8 +213,7 @@ int _start(int argc, char *argv[])
 		goto out;
 	}
 
-	/*
-		The PSX (Not the PlayStation or PSOne, but a PS2 with a DVR unit) has got an extra processor (Fujitsu MB91302A, aka the "DVRP") that seems to be emulating the console's PS2 ATA interface.
+	/*	The PSX (Not the PlayStation or PSOne, but a PS2 with a DVR unit) has got an extra processor (Fujitsu MB91302A, aka the "DVRP") that seems to be emulating the console's PS2 ATA interface.
 		The stock disks of all PSX units are definitely 48-bit LBA compliant because of their capacities, but the DVRP's emulation seems to have a design problem:
 			1. It indicates that 48-bit LBA is supported.
 			2. The 48-bit LBA capacity fields show the true capacity of the disk.
@@ -200,28 +223,44 @@ int _start(int argc, char *argv[])
 		The problem is obviously in the DVRP's firmware, but we currently have no way to fix these bugs because the DVRP is even more heavily secured that the IOP.
 		In the eyes of Sony, there isn't a problem because none of their retail PlayStation 2 software ever supported 48-bit LBA.
 
-		The obvious workaround here would be to totally kill 48-bit LBA support when ATAD is loaded on a PSX.
-	*/
-	Disable48bitLBA = ((SPD_REG16(SPD_R_REV_3) & SPD_CAPS_DVR) && (SPD_REG16(SPD_R_REV_1) != 0xFF))?1:0;	//The check for revision 0xFF is to workaround the problem that the Chinese SATA network adaptor has: it reports 0xFF for a lot of fields (including the capabilities field), which unfortunately triggers off the workaround for the PSX. It reports 0xFF as its revision too, which can be used to identify it.
+		The obvious workaround here would be to disable 48-bit LBA support when ATAD is loaded on a PSX. */
+	ata_disable_lba48 = (SPD_REG16(SPD_R_REV_3) & SPD_CAPS_DVR)?1:0;
 
-	if ((res = RegisterLibraryEntries(&_exp_atad)) != 0) {
-		M_PRINTF("Library is already registered, exiting.\n");
-		goto out;
-	}
+#ifdef ATA_GAMESTAR_WORKAROUND
+	/*	Some compatible adaptors may malfunction if transfers are not done according to the old ps2atad design.
+		Official adaptors appear to have a 0x0001 set for this register, but not compatibles.
+		While official I/O to this register are 8-bit, some compatibles have a 0x01 for the lower 8-bits,
+		but the upper 8-bits contain some random value. Hence perform a 16-bit read instead. */
+	if(SPD_REG16(0x20) != 1) {
+		ata_gamestar_workaround = 1;
+		M_PRINTF("Compatible adaptor detected.\n");
+	} else {
+		ata_gamestar_workaround = 0;
+	}   
+#endif
 
-	event.attr = 0;
-	event.bits = 0;
-	if ((ata_evflg = CreateEventFlag(&event)) < 0) {
+	if ((ata_evflg = ata_create_event_flag()) < 0) {
 		M_PRINTF("Couldn't create event flag, exiting.\n");
 		res = 1;
 		goto out;
 	}
 
+	/* In v1.04, PIO mode 0 was set here. In late versions, it is set in ata_init_devices(). */
 	dev9RegisterIntrCb(1, &ata_intr_cb);
 	dev9RegisterIntrCb(0, &ata_intr_cb);
-	//Read the comment above about these callbacks.
-/*	dev9RegisterPreDmaCb(0, &AtadPreDmaCb);
-	dev9RegisterPostDmaCb(0, &AtadPostDmaCb); */
+#ifdef ATA_GAMESTAR_WORKAROUND
+	if (!ata_gamestar_workaround) {
+#endif
+	dev9RegisterPreDmaCb(0, &ata_pre_dma_cb);
+	dev9RegisterPostDmaCb(0, &ata_post_dma_cb);
+#ifdef ATA_GAMESTAR_WORKAROUND
+	}
+#endif
+
+	if ((res = RegisterLibraryEntries(&_exp_atad)) != 0) {
+		M_PRINTF("Library is already registered, exiting.\n");
+		goto out;
+	}
 
 	res = 0;
 	M_PRINTF("Driver loaded.\n");
@@ -237,7 +276,7 @@ static int ata_intr_cb(int flag)
 		memset(atad_devinfo, 0, sizeof atad_devinfo);
 	} else {
 		dev9IntrDisable(SPD_INTR_ATA);
-		iSetEventFlag(ata_evflg, 0x02);
+		iSetEventFlag(ata_evflg, ATA_EV_COMPLETE);
 	}
 
 	return 1;
@@ -245,7 +284,7 @@ static int ata_intr_cb(int flag)
 
 static unsigned int ata_alarm_cb(void *unused)
 {
-	iSetEventFlag(ata_evflg, 0x01);
+	iSetEventFlag(ata_evflg, ATA_EV_TIMEOUT);
 	return 0;
 }
 
@@ -256,8 +295,15 @@ int ata_get_error(void)
 	return ata_hwport->r_error & 0xff;
 }
 
-/* 0x80 for busy, 0x88 for bus busy.  */
-static int ata_wait_busy(int bits)
+#define ATA_WAIT_BUSY		0x80
+#define ATA_WAIT_BUSBUSY	0x88
+
+#define ata_wait_busy()		gen_ata_wait_busy(ATA_WAIT_BUSY)
+#define ata_wait_bus_busy()	gen_ata_wait_busy(ATA_WAIT_BUSBUSY)
+
+/* 0x80 for busy, 0x88 for bus busy.
+	In the original ATAD, the busy and bus-busy functions were separate, but similar.  */
+static int gen_ata_wait_busy(int bits)
 {
 	USE_ATA_REGS;
 	int i, didx, delay;
@@ -290,7 +336,7 @@ static int ata_wait_busy(int bits)
 	}
 
 	M_PRINTF("Timeout while waiting on busy (0x%02x).\n", bits);
-	return -502;
+	return ATA_RES_ERR_TIMEOUT;
 }
 
 static int ata_device_select(int device)
@@ -298,7 +344,7 @@ static int ata_device_select(int device)
 	USE_ATA_REGS;
 	int res;
 
-	if ((res = ata_wait_busy(0x88)) < 0)
+	if ((res = ata_wait_bus_busy()) < 0)
 		return res;
 
 	/* If the device was already selected, nothing to do.  */
@@ -308,8 +354,9 @@ static int ata_device_select(int device)
 	/* Select the device.  */
 	ata_hwport->r_select = (device & 1) << 4;
 	res = ata_hwport->r_control;
+	res = ata_hwport->r_control;	//Only done once in v1.04.
 
-	return ata_wait_busy(0x88);
+	return ata_wait_bus_busy();
 }
 
 /* Export 6 */
@@ -322,19 +369,19 @@ static int ata_device_select(int device)
 
 	48-bit LBA just involves writing the upper 24 bits in the format above into each respective register on the first write pass, before writing the lower 24 bits in the 2nd write pass. The LBA bits within the device field are not used in either write pass.
 */
-int ata_io_start(void *buf, unsigned int blkcount, unsigned short int feature, unsigned short int nsector, unsigned short int sector, unsigned short int lcyl, unsigned short int hcyl, unsigned short int select, unsigned short int command)
+int ata_io_start(void *buf, u32 blkcount, u16 feature, u16 nsector, u16 sector, u16 lcyl, u16 hcyl, u16 select, u16 command)
 {
 	USE_ATA_REGS;
 	iop_sys_clock_t cmd_timeout;
 	const ata_cmd_info_t *cmd_table;
 	int i, res, type, cmd_table_size;
 	int using_timeout, device = (select >> 4) & 1;
-	unsigned char searchcmd;
+	u8 searchcmd;
 
 	ClearEventFlag(ata_evflg, 0);
 
 	if (!atad_devinfo[device].exists)
-		return -505;
+		return ATA_RES_ERR_NODEV;
 
 	if ((res = ata_device_select(device)) != 0)
 		return res;
@@ -344,15 +391,15 @@ int ata_io_start(void *buf, unsigned int blkcount, unsigned short int feature, u
 	if (command == ATA_C_SCE_SECURITY_CONTROL) {
 		cmd_table = sec_ctrl_cmd_table;
 		cmd_table_size = SEC_CTRL_CMD_TABLE_SIZE;
-		searchcmd = feature;
+		searchcmd = (u8)feature;
 	} else if (command == ATA_C_SMART) {
 		cmd_table = smart_cmd_table;
 		cmd_table_size = SMART_CMD_TABLE_SIZE;
-		searchcmd = feature;
+		searchcmd = (u8)feature;
 	} else {
 		cmd_table = ata_cmd_table;
 		cmd_table_size = ATA_CMD_TABLE_SIZE;
-		searchcmd = command & 0xff;
+		searchcmd = (u8)command;
 	}
 
 	type = 0;
@@ -363,8 +410,8 @@ int ata_io_start(void *buf, unsigned int blkcount, unsigned short int feature, u
 		}
 	}
 
-	if (!(atad_cmd_state.type = type & 0x7F))
-		return -506;
+	if (!(atad_cmd_state.type = type & 0x7F))	//Non-SONY: ignore the 48-bit LBA flag.
+		return ATA_RES_ERR_CMD;
 
 	atad_cmd_state.buf = buf;
 	atad_cmd_state.blkcount = blkcount;
@@ -372,21 +419,21 @@ int ata_io_start(void *buf, unsigned int blkcount, unsigned short int feature, u
 	/* Check that the device is ready if this the appropiate command.  */
 	if (!(ata_hwport->r_control & 0x40)) {
 		switch (command) {
-			case 0x08:
-			case 0x90:
-			case 0x91:
-			case 0xa0:
-			case 0xa1:
+			case ATA_C_DEVICE_RESET:
+			case ATA_C_EXECUTE_DEVICE_DIAGNOSTIC:
+			case ATA_C_INITIALIZE_DEVICE_PARAMETERS:
+			case ATA_C_PACKET:
+			case ATA_C_IDENTIFY_PACKET_DEVICE:
 				break;
 			default:
 				M_PRINTF("Error: Device %d is not ready.\n", device);
-				return -501;
+				return ATA_RES_ERR_NOTREADY;
 		}
 	}
 
 	/* Does this command need a timeout?  */
 	using_timeout = 0;
-	switch (type & 0x7F) {
+	switch (type & 0x7F) {	//Non-SONY: ignore the 48-bit LBA flag.
 		case 1:
 		case 6:
 			using_timeout = 1;
@@ -416,7 +463,7 @@ int ata_io_start(void *buf, unsigned int blkcount, unsigned short int feature, u
 	/* Finally!  We send off the ATA command with arguments.  */
 	ata_hwport->r_control = (using_timeout == 0) << 1;
 
-	if(type&0x80){	//For the sake of achieving (greatly) improved performance, write the registers twice only if required! This is also required for compatibility with the buggy firmware of certain PSX units.
+	if(type&0x80) {	//For the sake of achieving improved performance, write the registers twice only if required! This is also required for compatibility with the buggy firmware of certain PSX units.
 		/* 48-bit LBA requires writing to the address registers twice,
 		   24 bits of the LBA address is written each time.
 		   Writing to registers twice does not affect 28-bit LBA since
@@ -433,7 +480,7 @@ int ata_io_start(void *buf, unsigned int blkcount, unsigned short int feature, u
 	ata_hwport->r_sector  = sector & 0xff;
 	ata_hwport->r_lcyl    = lcyl & 0xff;
 	ata_hwport->r_hcyl    = hcyl & 0xff;
-	ata_hwport->r_select  = select & 0xff;
+	ata_hwport->r_select  = (select | ATA_SEL_LBA) & 0xff;	//In v1.04, LBA was enabled in the ata_device_sector_io function.
 	ata_hwport->r_command = command & 0xff;
 
 	/* Turn on the LED.  */
@@ -443,43 +490,45 @@ int ata_io_start(void *buf, unsigned int blkcount, unsigned short int feature, u
 }
 
 /* Do a PIO transfer, to or from the device.  */
-static inline int ata_pio_transfer(ata_cmd_state_t *cmd_state)
+static int ata_pio_transfer(ata_cmd_state_t *cmd_state)
 {
 	USE_ATA_REGS;
-	void *buf;
+	u8 *buf8;
+	u16 *buf16;
 	int i, type;
-	unsigned short int status = ata_hwport->r_status & 0xff;
+	u16 status = ata_hwport->r_status & 0xff;
 
 	if (status & ATA_STAT_ERR) {
-		M_PRINTF("Error: Command error: status 0x%02x, error 0x%02x.\n", status, ata_get_error());
-		return -503;
+		M_PRINTF("Error: PIO cmd error: status 0x%02x, error 0x%02x.\n", status, ata_get_error());
+		return ATA_RES_ERR_IO;
 	}
 
 	/* DRQ must be set (data request).  */
 	if (!(status & ATA_STAT_DRQ))
-		return -504;
+		return ATA_RES_ERR_NODATA;
 
 	type = cmd_state->type;
 
 	if (type == 3 || type == 8) {
 		/* PIO data out */
-		buf = cmd_state->buf;
+		buf16 = cmd_state->buf16;
 		for (i = 0; i < 256; i++) {
-			ata_hwport->r_data = *(unsigned short int *)buf;
-			cmd_state->buf = ++((unsigned short int *)buf);
+			ata_hwport->r_data = *buf16;
+			cmd_state->buf16 = ++buf16;
 		}
 		if (cmd_state->type == 8) {
+			buf8 = cmd_state->buf8;
 			for (i = 0; i < 4; i++) {
-				ata_hwport->r_data = *(u8 *)buf;
-				cmd_state->buf = ++((u8 *)buf);
+				ata_hwport->r_data = *buf8;
+				cmd_state->buf8 = ++buf8;
 			}
 		}
 	} else if (type == 2) {
 		/* PIO data in  */
-		buf = cmd_state->buf;
+		buf16 = cmd_state->buf16;
 		for (i = 0; i < 256; i++) {
-			*(unsigned short int *)buf = ata_hwport->r_data;
-			cmd_state->buf = ++((unsigned short int *)buf);
+			*buf16 = ata_hwport->r_data;
+			cmd_state->buf16 = ++buf16;
 		}
 	}
 
@@ -487,14 +536,13 @@ static inline int ata_pio_transfer(ata_cmd_state_t *cmd_state)
 }
 
 /* Complete a DMA transfer, to or from the device.  */
-static inline int ata_dma_complete(void *buf, int blkcount, int dir)
+static int ata_dma_complete(void *buf, u32 blkcount, int dir)
 {
 	USE_ATA_REGS;
 	USE_SPD_REGS;
-	unsigned int count, nbytes;
-	u32 bits;
+	u32 bits, count, nbytes;
 	int i, res;
-	unsigned short int dma_stat;
+	u16 dma_stat;
 
 	while (blkcount) {
 		for (i = 0; i < 20; i++)
@@ -506,18 +554,19 @@ static inline int ata_dma_complete(void *buf, int blkcount, int dir)
 
 		dev9IntrEnable(SPD_INTR_ATA);
 		/* Wait for the previous transfer to complete or a timeout.  */
-		WaitEventFlag(ata_evflg, 0x03, WEF_CLEAR|WEF_OR, &bits);
+		WaitEventFlag(ata_evflg, ATA_EV_TIMEOUT|ATA_EV_COMPLETE, WEF_CLEAR|WEF_OR, &bits);
 
-		if (bits & 0x01) {	/* Timeout.  */
+		if (bits & ATA_EV_TIMEOUT) {	/* Timeout.  */
 			M_PRINTF("Error: DMA timeout.\n");
-			return -502;
+			return ATA_RES_ERR_TIMEOUT;
 		}
 		/* No DMA completion bit? Spurious interrupt.  */
 		if (!(SPD_REG16(SPD_R_INTR_STAT) & 0x02)) {
 			if (ata_hwport->r_control & 0x01) {
 				M_PRINTF("Error: Command error while doing DMA.\n");
 				M_PRINTF("Error: Command error status 0x%02x, error 0x%02x.\n", ata_hwport->r_status, ata_get_error());
-				return -503;
+				/* In v1.04, there was no check for ICRC. */
+				return((ata_get_error() & ATA_ERR_ICRC) ? ATA_RES_ERR_ICRC : ATA_RES_ERR_IO);
 			} else {
 				M_PRINTF("Warning: Got command interrupt, but not an error.\n");
 				continue;
@@ -532,7 +581,7 @@ next_transfer:
 		if ((res = dev9DmaTransfer(0, buf, (nbytes << 9)|32, dir)) < 0)
 			return res;
 
-		(u8 *)buf += nbytes;
+		buf = (void*)((u8 *)buf + nbytes);
 		blkcount -= count;
 	}
 
@@ -547,13 +596,13 @@ int ata_io_finish(void)
 	ata_cmd_state_t *cmd_state = &atad_cmd_state;
 	u32 bits;
 	int i, res = 0, type = cmd_state->type;
-	unsigned short int stat;
+	u16 stat;
 
 	if (type == 1 || type == 6) {	/* Non-data commands.  */
-		WaitEventFlag(ata_evflg, 0x03, WEF_CLEAR|WEF_OR, &bits);
-		if (bits & 0x01) {	/* Timeout.  */
+		WaitEventFlag(ata_evflg, ATA_EV_TIMEOUT|ATA_EV_COMPLETE, WEF_CLEAR|WEF_OR, &bits);
+		if (bits & ATA_EV_TIMEOUT) {	/* Timeout.  */
 			M_PRINTF("Error: ATA timeout on a non-data command.\n");
-			return -502;
+			return ATA_RES_ERR_TIMEOUT;
 		}
 	} else if (type == 4) {		/* DMA.  */
 		if ((res = ata_dma_complete(cmd_state->buf, cmd_state->blkcount,
@@ -565,22 +614,23 @@ int ata_io_finish(void)
 				break;
 		if (!stat) {
 			dev9IntrEnable(SPD_INTR_ATA0);
-			WaitEventFlag(ata_evflg, 0x03, WEF_CLEAR|WEF_OR, &bits);
-			if (bits & 0x01) {
-				M_PRINTF("Error: ATA timeout on DMA completion.\n");
-				res = -502;
+			WaitEventFlag(ata_evflg, ATA_EV_TIMEOUT|ATA_EV_COMPLETE, WEF_CLEAR|WEF_OR, &bits);
+			if (bits & ATA_EV_TIMEOUT) {
+				M_PRINTF("Error: ATA timeout on DMA completion, buffer stat %04x\n", SPD_REG16(0x38));
+				M_PRINTF("Error: istat %x, ienable %x\n", SPD_REG16(SPD_R_INTR_STAT), SPD_REG16(SPD_R_INTR_MASK));
+				res = ATA_RES_ERR_TIMEOUT;
 			}
 		}
 	} else {			/* PIO transfers.  */
 		stat = ata_hwport->r_control;
-		if ((res = ata_wait_busy(0x80)) < 0)
+		if ((res = ata_wait_busy()) < 0)
 			goto finish;
 
 		/* Transfer each PIO data block.  */
 		while (--cmd_state->blkcount != -1) {
 			if ((res = ata_pio_transfer(cmd_state)) < 0)
 				goto finish;
-			if ((res = ata_wait_busy(0x80)) < 0)
+			if ((res = ata_wait_busy()) < 0)
 				goto finish;
 		}
 	}
@@ -590,10 +640,11 @@ int ata_io_finish(void)
 
 	/* Wait until the device isn't busy.  */
 	if (ata_hwport->r_status & ATA_STAT_BUSY)
-		res = ata_wait_busy(0x80);
+		res = ata_wait_busy();
 	if ((stat = ata_hwport->r_status) & ATA_STAT_ERR) {
 		M_PRINTF("Error: Command error: status 0x%02x, error 0x%02x.\n", stat, ata_get_error());
-		res = -503;
+		/* In v1.04, there was no check for ICRC. */
+		res = (ata_get_error() & ATA_ERR_ICRC) ? ATA_RES_ERR_ICRC : ATA_RES_ERR_IO;
 	}
 
 finish:
@@ -602,18 +653,22 @@ finish:
 	/* Turn off the LED.  */
 	dev9LEDCtl(0);
 
+	if(res)
+		M_PRINTF("error: ATA failed, %d\n", res);
+
 	return res;
 }
 
 /* Reset the ATA controller/bus.  */
-static inline int ata_bus_reset(void)
+static int ata_bus_reset(void)
 {
 	USE_SPD_REGS;
 	SPD_REG16(SPD_R_IF_CTRL) = SPD_IF_ATA_RESET;
 	DelayThread(100);
+	SPD_REG16(SPD_R_IF_CTRL) = 0;	//Not present in v1.04.
 	SPD_REG16(SPD_R_IF_CTRL) = 0x48;
 	DelayThread(3000);
-	return ata_wait_busy(0x80);
+	return ata_wait_busy();
 }
 
 /* Export 5 */
@@ -622,7 +677,7 @@ int ata_reset_devices(void)
 	USE_ATA_REGS;
 
 	if (ata_hwport->r_control & 0x80)
-		return -501;
+		return ATA_RES_ERR_NOTREADY;
 
 	/* Disables device interrupt assertion and asserts SRST. */
 	ata_hwport->r_control = 6;
@@ -632,7 +687,7 @@ int ata_reset_devices(void)
 	ata_hwport->r_control = 2;
 	DelayThread(3000);
 
-	return ata_wait_busy(0x80);
+	return ata_wait_busy();
 }
 
 /* Export 17 */
@@ -640,7 +695,7 @@ int ata_device_flush_cache(int device)
 {
 	int res;
 
-	if(!(res = ata_io_start(NULL, 1, 0, 0, 0, 0, 0, (device << 4) & 0xffff, lba_48bit[device]?ATA_C_FLUSH_CACHE_EXT:ATA_C_FLUSH_CACHE))) res=ata_io_finish();
+	if(!(res = ata_io_start(NULL, 1, 0, 0, 0, 0, 0, (device << 4) & 0xffff, atad_devinfo[device].lba48?ATA_C_FLUSH_CACHE_EXT:ATA_C_FLUSH_CACHE))) res=ata_io_finish();
 
 	return res;
 }
@@ -740,13 +795,15 @@ static int ata_device_set_transfer_mode(int device, int type, int mode)
 		return res;
 
 	switch(type){
-		case ATAD_XFER_MODE_MDMA:
+#ifdef ATA_MWDMA_MODES
+		case ATA_XFER_MODE_MDMA:
 			ata_multiword_dma_mode(mode);
 			break;
-		case ATAD_XFER_MODE_UDMA:
+#endif
+		case ATA_XFER_MODE_UDMA:
 			ata_ultra_dma_mode(mode);
 			break;
-		case ATAD_XFER_MODE_PIO:
+		case ATA_XFER_MODE_PIO:
 			ata_pio_mode(mode);
 			break;
 	}
@@ -755,42 +812,64 @@ static int ata_device_set_transfer_mode(int device, int type, int mode)
 }
 
 /* Export 9 */
-int ata_device_sector_io(int device, void *buf, unsigned int lba, unsigned int nsectors, int dir)
+/* Note: this can only support DMA modes, due to the commands issued. */
+int ata_device_sector_io(int device, void *buf, u32 lba, u32 nsectors, int dir)
 {
-	int res = 0;
-	unsigned short int sector, lcyl, hcyl, select, command, len;
+	USE_SPD_REGS;
+	int res = 0, retries;
+	u16 sector, lcyl, hcyl, select, command, len;
 
-	while (nsectors > 0) {
-		ata_set_dir(dir);
-
+	while (res == 0 && nsectors > 0) {
 		/* Variable lba is only 32 bits so no change for lcyl and hcyl.  */
 		lcyl = (lba >> 8) & 0xff;
 		hcyl = (lba >> 16) & 0xff;
 
-		if (lba_48bit[device]) {
+		if (atad_devinfo[device].lba48) {
 			/* Setup for 48-bit LBA.  */
 			len = (nsectors > 65536) ? 65536 : nsectors;
 
 			/* Combine bits 24-31 and bits 0-7 of lba into sector.  */
 			sector = ((lba >> 16) & 0xff00) | (lba & 0xff);
-			/* 0x40 enables LBA.  */
-			select = ((device << 4) | 0x40) & 0xffff;
+			/* In v1.04, LBA was enabled here.  */
+			select = (device << 4) & 0xffff;
 			command = (dir == 1) ? ATA_C_WRITE_DMA_EXT : ATA_C_READ_DMA_EXT;
 		} else {
 			/* Setup for 28-bit LBA.  */
 			len = (nsectors > 256) ? 256 : nsectors;
 			sector = lba & 0xff;
-			/* 0x40 enables LBA.  */
-			select = ((device << 4) | ((lba >> 24) & 0xf) | 0x40) & 0xffff;
+			/* In v1.04, LBA was enabled here.  */
+			select = ((device << 4) | ((lba >> 24) & 0xf)) & 0xffff;
 			command = (dir == 1) ? ATA_C_WRITE_DMA : ATA_C_READ_DMA;
 		}
 
-		if ((res = ata_io_start(buf, len, 0, len, sector, lcyl, hcyl, select, command)) != 0)
-			return res;
-		if ((res = ata_io_finish()) != 0)
-			return res;
+		for(retries = 3; retries > 0; retries--) {
+#ifdef ATA_GAMESTAR_WORKAROUND
+			/* Due to the retry loop, put this call (for the GameStar workaround) here instead of the old location. */
+			if (ata_gamestar_workaround)
+				ata_set_dir(dir);
+#endif
 
-		(u8 *)buf += (len * 512);
+			if ((res = ata_io_start(buf, len, 0, len, sector, lcyl, hcyl, select, command)) != 0)
+				break;
+
+#ifdef ATA_GAMESTAR_WORKAROUND
+			if (!ata_gamestar_workaround)
+				ata_set_dir(dir);
+#else
+			/* Set up (part of) the transfer here. In v1.04, this was called at the top of the outer loop. */
+			ata_set_dir(dir);
+#endif
+
+			res = ata_io_finish();
+
+			/* In v1.04, this was not done. Neither was there a mechanism to retry if a non-permanent error occurs. */
+			SPD_REG16(SPD_R_IF_CTRL) &= ~SPD_IF_DMA_ENABLE;
+
+			if(res != ATA_RES_ERR_ICRC)
+				break;
+		}
+
+		buf = (void*)((u8 *)buf + len * 512);
 		lba += len;
 		nsectors -= len;
 	}
@@ -798,7 +877,7 @@ int ata_device_sector_io(int device, void *buf, unsigned int lba, unsigned int n
 	return res;
 }
 
-static void ata_get_security_status(int device, ata_devinfo_t *devinfo, unsigned short int *param)
+static void ata_get_security_status(int device, ata_devinfo_t *devinfo, u16 *param)
 {
 	if (ata_device_identify(device, param) == 0)
 		devinfo[device].security_status = param[ATA_ID_SECURITY_STATUS];
@@ -808,7 +887,7 @@ static void ata_get_security_status(int device, ata_devinfo_t *devinfo, unsigned
 int ata_device_sce_sec_set_password(int device, void *password)
 {
 	ata_devinfo_t *devinfo = atad_devinfo;
-	unsigned short int *param = ata_param;
+	u16 *param = ata_param;
 	int res;
 
 	if (devinfo[device].security_status & ATA_F_SEC_ENABLED) return 0;
@@ -828,7 +907,7 @@ int ata_device_sce_sec_set_password(int device, void *password)
 int ata_device_sce_sec_unlock(int device, void *password)
 {
 	ata_devinfo_t *devinfo = atad_devinfo;
-	unsigned short int *param = ata_param;
+	u16 *param = ata_param;
 	int res;
 
 	if (!(devinfo[device].security_status & ATA_F_SEC_LOCKED)) return 0;
@@ -844,7 +923,7 @@ int ata_device_sce_sec_unlock(int device, void *password)
 	/* Check to see if the drive was actually unlocked.  */
 	ata_get_security_status(device, devinfo, param);
 	if (devinfo[device].security_status & ATA_F_SEC_LOCKED)
-		return -509;
+		return ATA_RES_ERR_LOCKED;
 
 	return 0;
 }
@@ -853,7 +932,6 @@ int ata_device_sce_sec_unlock(int device, void *password)
 int ata_device_sce_sec_erase(int device)
 {
 	ata_devinfo_t *devinfo = atad_devinfo;
-	unsigned short int *param = NULL;
 	int res;
 
 	if (!(devinfo[device].security_status & ATA_F_SEC_ENABLED) || !(devinfo[device].security_status & ATA_F_SEC_LOCKED)) return 0;
@@ -868,17 +946,17 @@ int ata_device_sce_sec_erase(int device)
 		res = ata_io_finish();
 
 finish:
-	ata_get_security_status(device, devinfo, param);
+	ata_get_security_status(device, devinfo, NULL);
 	return res;
 }
 
 static void ata_device_probe(ata_devinfo_t *devinfo)
 {
 	USE_ATA_REGS;
-	unsigned short int nsector, sector, lcyl, hcyl, select;
+	u16 nsector, sector, lcyl, hcyl, select;
 
 	devinfo->exists = 0;
-	devinfo->has_packet = 0;
+	devinfo->has_packet = 2;
 
 	if (ata_hwport->r_control & 0x88)
 		return;
@@ -893,8 +971,20 @@ static void ata_device_probe(ata_devinfo_t *devinfo)
 		return;
 	devinfo->exists = 1;
 
-	if ((lcyl == 0x14) && (hcyl == 0xeb))
+	if ((lcyl == 0x00) && (hcyl == 0x00))
+		devinfo->has_packet = 0;
+	else if ((lcyl == 0x14) && (hcyl == 0xeb))
 		devinfo->has_packet = 1;
+
+	/* Seems to be for ensuring that there is a device connected.
+		Not sure why this has to be done, but is present in v2.4.  */
+	ata_hwport->r_lcyl = 0x55;
+	ata_hwport->r_hcyl = 0xaa;
+	lcyl = ata_hwport->r_lcyl & 0xff;
+	hcyl = ata_hwport->r_hcyl & 0xff;
+
+	if((lcyl != 0x55) || (hcyl != 0xaa))
+		devinfo->exists = 0;
 }
 
 static int ata_init_devices(ata_devinfo_t *devinfo)
@@ -902,13 +992,14 @@ static int ata_init_devices(ata_devinfo_t *devinfo)
 	USE_ATA_REGS;
 	int i, res;
 
-	ata_reset_devices();
+	if((res = ata_reset_devices()) != 0)
+		return res;
 
 	ata_device_probe(&devinfo[0]);
 	if (!devinfo[0].exists) {
 		M_PRINTF("Error: Unable to detect HDD 0.\n");
 		devinfo[1].exists = 0;
-		return 0;
+		return ATA_RES_ERR_NODEV;	//Returns 0 in v1.04.
 	}
 
 	/* If there is a device 1, grab it's info too.  */
@@ -919,7 +1010,7 @@ static int ata_init_devices(ata_devinfo_t *devinfo)
 	else
 		devinfo[1].exists = 0;
 
-	ata_pio_mode(0);
+	ata_pio_mode(0);	//PIO mode is set here, in late ATAD versions.
 
 	for (i = 0; i < 2; i++) {
 		if (!devinfo[i].exists)
@@ -930,12 +1021,13 @@ static int ata_init_devices(ata_devinfo_t *devinfo)
 		if (!devinfo[i].has_packet) {
 			res = ata_device_identify(i, ata_param);
 			devinfo[i].exists = (res == 0);
-		} else {
+		} else if (devinfo[i].has_packet == 1) {
 			/* If it's a packet device, send the IDENTIFY PACKET
 			   DEVICE command.  */
 			res = ata_device_pkt_identify(i, ata_param);
 			devinfo[i].exists = (res == 0);
 		}
+		/* Otherwise, do nothing if has_packet = 2. */
 
 		/* This next section is HDD-specific: if no device or it's a
 		   packet (ATAPI) device, we're done.  */
@@ -945,8 +1037,8 @@ static int ata_init_devices(ata_devinfo_t *devinfo)
 		/* This section is to detect whether the HDD supports 48-bit LBA
 		   (IDENITFY DEVICE bit 10 word 83) and get the total sectors from
 		   either words(61:60) for 28-bit or words(103:100) for 48-bit.  */
-		if (!Disable48bitLBA && (ata_param[ATA_ID_COMMAND_SETS_SUPPORTED] & 0x0400)) {
-			lba_48bit[i] = 1;
+		if (!ata_disable_lba48 && (ata_param[ATA_ID_COMMAND_SETS_SUPPORTED] & 0x0400)) {
+			atad_devinfo[i].lba48 = 1;
 			/* I don't think anyone would use a >2TB HDD but just in case.  */
 			if (ata_param[ATA_ID_48BIT_SECTOTAL_HI]) {
 				devinfo[i].total_sectors = 0xffffffff;
@@ -956,17 +1048,25 @@ static int ata_init_devices(ata_devinfo_t *devinfo)
 					ata_param[ATA_ID_48BIT_SECTOTAL_LO];
 			}
 		} else {
-			lba_48bit[i] = 0;
+			atad_devinfo[i].lba48 = 0;
 			devinfo[i].total_sectors = (ata_param[ATA_ID_SECTOTAL_HI] << 16)|
 				ata_param[ATA_ID_SECTOTAL_LO];
 		}
 		devinfo[i].security_status = ata_param[ATA_ID_SECURITY_STATUS];
 
 		/* Ultra DMA mode 4.  */
-		ata_device_set_transfer_mode(i, ATAD_XFER_MODE_UDMA, 4);
+		ata_device_set_transfer_mode(i, ATA_XFER_MODE_UDMA, 4);
 		ata_device_smart_enable(i);
 		/* Set idle timeout period to 21min 15s.  */
 		ata_device_idle(i, 0xff);
+
+		/* Call the proprietary identify command. */
+#ifdef ATA_SCE_AUTH_HDD
+		if(ata_device_sce_identify_drive(i, ata_param) != 0) {
+			M_PRINTF("error: This is not SCE genuine HDD.\n");
+			memset(&devinfo[i], 0, sizeof(devinfo[i]));
+		}
+#endif
 	}
 	return 0;
 }
@@ -975,8 +1075,8 @@ static int ata_init_devices(ata_devinfo_t *devinfo)
 ata_devinfo_t * ata_get_devinfo(int device)
 {
 	if(!ata_devinfo_init){
-		if(ata_bus_reset() || ata_init_devices(atad_devinfo)) return NULL;
 		ata_devinfo_init = 1;
+		if(ata_bus_reset() || ata_init_devices(atad_devinfo)) return NULL;
 	}
 
 	return &atad_devinfo[device];
@@ -985,19 +1085,24 @@ ata_devinfo_t * ata_get_devinfo(int device)
 static void ata_set_dir(int dir)
 {
 	USE_SPD_REGS;
-	unsigned short int val;
+	u16 val;
 
 	SPD_REG16(0x38) = 3;
 	val = SPD_REG16(SPD_R_IF_CTRL) & 1;
 	val |= (dir == ATA_DIR_WRITE) ? 0x4c : 0x4e;
 	SPD_REG16(SPD_R_IF_CTRL) = val;
-	SPD_REG16(SPD_R_XFR_CTRL) = dir | 0x86;	//In a modern ATAD module, the DMA EN bit (0x80) is set and cleared from the pre and post DMA callbacks instead. Read the comment above about this.
+#ifdef ATA_GAMESTAR_WORKAROUND
+	SPD_REG16(SPD_R_XFR_CTRL) = dir | (ata_gamestar_workaround ? 0x86 : 0x6);
+#else
+	SPD_REG16(SPD_R_XFR_CTRL) = dir | 0x6;	//In v1.04, DMA was enabled here (0x86 instead of 0x6)
+#endif
 }
 
 static void ata_pio_mode(int mode)
 {
 	USE_SPD_REGS;
-	unsigned short int val;
+#ifdef ATA_ALL_PIO_MODES
+	u16 val;
 
 	switch (mode) {
 		case 1:
@@ -1017,12 +1122,17 @@ static void ata_pio_mode(int mode)
 	}
 
 	SPD_REG16(SPD_R_PIO_MODE) = val;
+#else
+	/* In the late ATAD versions, PIO mode 0 is always used if PIO mode is utilized. */
+	SPD_REG16(SPD_R_PIO_MODE) = 0x92;
+#endif
 }
 
+#ifdef ATA_MWDMA_MODES
 static void ata_multiword_dma_mode(int mode)
 {
 	USE_SPD_REGS;
-	unsigned short int val;
+	u16 val;
 
 	switch(mode){
 		case 1:
@@ -1038,11 +1148,12 @@ static void ata_multiword_dma_mode(int mode)
 	SPD_REG16(SPD_R_MWDMA_MODE) = val;
 	SPD_REG16(SPD_R_IF_CTRL) = (SPD_REG16(SPD_R_IF_CTRL) & 0xfffe)|0x48;
 }
+#endif
 
 static void ata_ultra_dma_mode(int mode)
 {
 	USE_SPD_REGS;
-	unsigned short int val;
+	u16 val;
 
 	switch (mode)
 	{

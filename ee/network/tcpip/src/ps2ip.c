@@ -6,10 +6,12 @@
 # Copyright 2001-2004, ps2dev - http://www.ps2dev.org
 # Licenced under Academic Free License version 2.0
 # Review ps2sdk README & LICENSE files for further details.
-#
-# $Id: ps2ip.c 1680 2010-05-17 22:47:17Z jim $
-# PS2 TCP/IP STACK FOR EE
 */
+
+/**
+ * @file
+ * PS2 TCP/IP STACK FOR EE
+ */
 
 #include <stdio.h>
 #include <string.h>
@@ -21,6 +23,7 @@
 #include "lwip/tcpip.h"
 #include "lwip/netif.h"
 #include "lwip/dhcp.h"
+#include "lwip/prot/dhcp.h"
 #include "lwip/inet.h"
 #include "netif/etharp.h"
 
@@ -28,9 +31,10 @@
 
 typedef struct pbuf	PBuf;
 typedef struct netif	NetIF;
-typedef struct ip_addr	IPAddr;
+typedef struct ip4_addr	IPAddr;
 
 static struct netif NIF;
+static struct pbuf *TxHead, *TxTail;
 
 unsigned short int hsyncTicksPerMSec	= 16;
 
@@ -52,16 +56,17 @@ int ps2ip_getconfig(char* pszName, t_ip_info* pInfo)
 	memcpy(pInfo->hw_addr,pNetIF->hwaddr,sizeof(pInfo->hw_addr));
 
 #if LWIP_DHCP
+	struct dhcp *dhcp = netif_dhcp_data(pNetIF);
 
-	if ((pNetIF->dhcp != NULL) && (pNetIF->dhcp->state != DHCP_OFF))
+	if ((dhcp != NULL) && (dhcp->state != DHCP_STATE_OFF))
 	{
 		pInfo->dhcp_enabled=1;
-		pInfo->dhcp_status=pNetIF->dhcp->state;
+		pInfo->dhcp_status=dhcp->state;
 	}
 	else
 	{
 		pInfo->dhcp_enabled=0;
-		pInfo->dhcp_status=DHCP_OFF;
+		pInfo->dhcp_status=DHCP_STATE_OFF;
 	}
 
 #else
@@ -71,7 +76,7 @@ int ps2ip_getconfig(char* pszName, t_ip_info* pInfo)
 	return	1;
 }
 
-int ps2ip_setconfig(t_ip_info* pInfo)
+int ps2ip_setconfig(const t_ip_info* pInfo)
 {
 	NetIF*	pNetIF=netif_find(pInfo->netif_name);
 
@@ -79,121 +84,179 @@ int ps2ip_setconfig(t_ip_info* pInfo)
 	{
 		return	0;
 	}
-	netif_set_ipaddr(pNetIF,(IPAddr*)&pInfo->ipaddr);
-	netif_set_netmask(pNetIF,(IPAddr*)&pInfo->netmask);
-	netif_set_gw(pNetIF,(IPAddr*)&pInfo->gw);
 
 #if	LWIP_DHCP
+	struct dhcp *dhcp = netif_dhcp_data(pNetIF);
 
 	//Enable dhcp here
 
 	if (pInfo->dhcp_enabled)
 	{
-		if ((pNetIF->dhcp == NULL) || (pNetIF->dhcp->state == DHCP_OFF))
+		if ((dhcp == NULL) || (dhcp->state == DHCP_STATE_OFF))
 		{
-			//Start dhcp client
+			//Set initial IP address
+			netif_set_ipaddr(pNetIF,(IPAddr*)&pInfo->ipaddr);
+			netif_set_netmask(pNetIF,(IPAddr*)&pInfo->netmask);
+			netif_set_gw(pNetIF,(IPAddr*)&pInfo->gw);
+
+			//Start DHCP client
 			dhcp_start(pNetIF);
 		}
 	}
 	else
 	{
-		if ((pNetIF->dhcp != NULL) && (pNetIF->dhcp->state != DHCP_OFF))
+		if ((dhcp != NULL) && (dhcp->state != DHCP_STATE_OFF))
 		{
-			//Stop dhcp client
+			//Release DHCP lease
+			dhcp_release(pNetIF);
+
+			//Stop DHCP client
 			dhcp_stop(pNetIF);
 		}
+
+		netif_set_ipaddr(pNetIF,(IPAddr*)&pInfo->ipaddr);
+		netif_set_netmask(pNetIF,(IPAddr*)&pInfo->netmask);
+		netif_set_gw(pNetIF,(IPAddr*)&pInfo->gw);
 	}
 
+#else
+	netif_set_ipaddr(pNetIF,(IPAddr*)&pInfo->ipaddr);
+	netif_set_netmask(pNetIF,(IPAddr*)&pInfo->netmask);
+	netif_set_gw(pNetIF,(IPAddr*)&pInfo->gw);
 #endif
 
 	return	1;
 }
 
-static err_t SMapLowLevelOutput(struct netif* pNetIF, struct pbuf* pOutput){
-	static unsigned char buffer[1600];
+static void EnQTxPacket(struct pbuf *tx)
+{
+	DI();
+
+	if(TxHead != NULL)
+		TxHead->next = tx;
+
+	TxHead = tx;
+	tx->next = NULL;
+
+	if(TxTail == NULL)	//Queue empty
+		TxTail = tx;
+
+	EI();
+}
+
+static err_t SMapLowLevelOutput(struct netif* pNetIF, struct pbuf* pOutput)
+{
 	struct pbuf* pbuf;
-	unsigned char *buffer_ptr;
-	unsigned short int TotalLength;
+	err_t result;
 
-	pbuf=pOutput;
-	buffer_ptr=buffer;
-	TotalLength=0;
-	while(pbuf!=NULL){
-		memcpy(buffer_ptr, pbuf->payload, pbuf->len);
-		TotalLength+=pbuf->len;
-		buffer_ptr+=pbuf->len;
-		pbuf=pbuf->next;
+	result = ERR_OK;
+	if(pOutput->tot_len > pOutput->len)
+	{
+		pbuf_ref(pOutput);	//Increment reference count because LWIP must free the PBUF, not the driver!
+		if((pbuf = pbuf_coalesce(pOutput, PBUF_RAW)) != pOutput)
+		{	//No need to increase reference count because pbuf_coalesce() does it.
+			EnQTxPacket(pbuf);
+			NetManNetIFXmit();
+		} else
+			result = ERR_MEM;
+	} else {
+		pbuf_ref(pOutput);	//This will be freed later.
+		EnQTxPacket(pOutput);
+		NetManNetIFXmit();
 	}
-
-	return NetManNetIFSendPacket(buffer, TotalLength)==0?ERR_OK:ERR_IF;
-}
-
-static void LinkStateUp(void){
-	tcpip_callback((void*)&netif_set_link_up, &NIF);
-}
-
-static void LinkStateDown(void){
-	tcpip_callback((void*)&netif_set_link_down, &NIF);
-}
-
-#define LWIP_STACK_MAX_RX_PBUFS	16
-
-struct NetManPacketBuffer pbufs[LWIP_STACK_MAX_RX_PBUFS];
-static unsigned short int NetManRxPacketBufferPoolFreeStart;
-static struct NetManPacketBuffer *recv_pbuf_queue_start, *recv_pbuf_queue_end;
-static unsigned int RxPBufsFree;
-
-static struct NetManPacketBuffer *AllocRxPacket(unsigned int size){
-	struct pbuf* pBuf;
-	struct NetManPacketBuffer *result;
-
-	if(RxPBufsFree>0 && ((pBuf=pbuf_alloc(PBUF_RAW, size, PBUF_POOL))!=NULL)){
-		result=&pbufs[NetManRxPacketBufferPoolFreeStart++];
-		if(NetManRxPacketBufferPoolFreeStart>=LWIP_STACK_MAX_RX_PBUFS) NetManRxPacketBufferPoolFreeStart=0;
-
-		result->payload=pBuf->payload;
-		result->handle=pBuf;
-		result->length=size;
-
-		RxPBufsFree--;
-	}
-	else result=NULL;
 
 	return result;
 }
 
-static void FreeRxPacket(struct NetManPacketBuffer *packet){
-	pbuf_free(packet->handle);
+static void LinkStateUp(void)
+{
+	tcpip_callback((void*)&netif_set_link_up, &NIF);
 }
 
-static int EnQRxPacket(struct NetManPacketBuffer *packet){
-	if(recv_pbuf_queue_start==NULL){	//If there are currently no packets in the queue.
-		recv_pbuf_queue_start=packet;
-	}
-	else{
-		recv_pbuf_queue_end->next=packet;	//If there is currently a packet in the queue, this packet shall go after it.
-	}
-
-	packet->next=NULL;
-	recv_pbuf_queue_end=packet;	//Add the packet to the queue.
-
-	return 0;
+static void LinkStateDown(void)
+{
+	tcpip_callback((void*)&netif_set_link_down, &NIF);
 }
 
-static int FlushInputQueue(void){
-	struct NetManPacketBuffer* pbuf;
+static void *AllocRxPacket(unsigned int size, void **payload)
+{
+	struct pbuf* pbuf;
 
-	if((pbuf=recv_pbuf_queue_start)!=NULL){
-		do{
-			ps2ip_input(pbuf->handle, &NIF);
-		}while((pbuf=pbuf->next)!=NULL);
+	if((pbuf = pbuf_alloc(PBUF_RAW, size, PBUF_POOL)) != NULL)
+		*payload = pbuf->payload;
 
-		recv_pbuf_queue_start=recv_pbuf_queue_end=NULL;
+	return pbuf;
+}
 
-		RxPBufsFree=LWIP_STACK_MAX_RX_PBUFS;
+static void ReallocRxPacket(void *packet, unsigned int size)
+{
+	pbuf_realloc((struct pbuf *)packet, size);
+}
+
+static void FreeRxPacket(void *packet)
+{
+	pbuf_free(packet);
+}
+
+static void EnQRxPacket(void *packet)
+{
+	ps2ip_input(packet, &NIF);
+}
+
+static int NextTxPacket(void **payload)
+{
+	int len;
+
+	if(TxTail != NULL)
+	{
+		*payload = TxTail->payload;
+		len = TxTail->len;
+	} else
+		len = 0;
+
+	return len;
+}
+
+static void DeQTxPacket(void)
+{
+	struct pbuf *toFree;
+
+	toFree = NULL;
+
+	DI();
+	if(TxTail != NULL)
+	{
+		toFree = TxTail;
+
+		if(TxTail == TxHead) {
+			//Last in queue.
+			TxTail = NULL;
+			TxHead = NULL;
+		} else {
+			TxTail = TxTail->next;
+		}
 	}
+	EI();
 
-	return 0;
+	if(toFree != NULL)
+	{
+		toFree->next = NULL;
+		pbuf_free(toFree);
+	}
+}
+
+static int AfterTxPacket(void **payload)
+{
+	int len;
+
+	if(TxTail != NULL && TxTail->next != NULL)
+	{
+		*payload = TxTail->next->payload;
+		len = TxTail->next->len;
+	} else
+		len = 0;
+
+	return len;
 }
 
 static void InitDone(void* pvArg)
@@ -202,9 +265,12 @@ static void InitDone(void* pvArg)
 	sys_sem_signal((sys_sem_t*)pvArg);
 }
 
-//Should be called at the beginning of the program to set up the network interface.
+/** Should be called at the beginning of the program to set up the network interface. */
 static err_t SMapIFInit(struct netif* pNetIF)
 {
+	TxHead = NULL;
+	TxTail = NULL;
+
 	pNetIF->name[0]='s';
 	pNetIF->name[1]='m';
 	pNetIF->output=&etharp_output;	// For LWIP 1.3.0 and later.
@@ -223,33 +289,19 @@ static err_t SMapIFInit(struct netif* pNetIF)
 
 err_t ps2ip_input(PBuf* pInput, NetIF* pNetIF)
 {
-	switch(htons(((struct eth_hdr*)(pInput->payload))->type))
-	{
-	case ETHTYPE_IP:
-	case ETHTYPE_ARP:
-		//IP-packet. Update ARP table, obtain first queued packet.
-		//ARP-packet. Pass pInput to ARP module, get ARP reply or ARP queued packet.
-		//Pass to network layer.
+	err_t result;
 
-		pNetIF->input(pInput, pNetIF);
-		break;
-	default:
-		//Unsupported ethernet packet-type. Free pInput.
+	if((result = pNetIF->input(pInput, pNetIF)) != ERR_OK)
 		pbuf_free(pInput);
-	}
 
-	return	ERR_OK;
+	return result;
 }
 
-static inline int InitializeLWIP(void)
+static inline void InitializeLWIP(void)
 {
 	sys_sem_t Sema;
 
 	dbgprintf("PS2IP: Module Loaded.\n");
-
-	RxPBufsFree=LWIP_STACK_MAX_RX_PBUFS;
-	NetManRxPacketBufferPoolFreeStart=0;
-	recv_pbuf_queue_start=recv_pbuf_queue_end=NULL;
 
 	sys_sem_new(&Sema, 0);
 	dbgprintf("PS2IP: Calling tcpip_init\n");
@@ -259,25 +311,26 @@ static inline int InitializeLWIP(void)
 	sys_sem_free(&Sema);
 
 	dbgprintf("PS2IP: System Initialised\n");
-
-	return 0;
 }
 
-int ps2ipInit(struct ip_addr *ip_address, struct ip_addr *subnet_mask, struct ip_addr *gateway){
+int ps2ipInit(struct ip4_addr *ip_address, struct ip4_addr *subnet_mask, struct ip4_addr *gateway){
 	static struct NetManNetProtStack stack={
 		&LinkStateUp,
 		&LinkStateDown,
 		&AllocRxPacket,
 		&FreeRxPacket,
 		&EnQRxPacket,
-		&FlushInputQueue
+		&NextTxPacket,
+		&DeQTxPacket,
+		&AfterTxPacket,
+		&ReallocRxPacket
 	};
 
 	NetManInit();
 
 	InitializeLWIP();
 
-	netif_add(&NIF, ip_address, subnet_mask, gateway, &NIF, &SMapIFInit, tcpip_input);
+	netif_add(&NIF, ip_address, subnet_mask, gateway, NULL, &SMapIFInit, tcpip_input);
 	netif_set_default(&NIF);
 
 	NetManRegisterNetworkStack(&stack);

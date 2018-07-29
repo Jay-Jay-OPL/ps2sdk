@@ -6,8 +6,6 @@
 # Copyright 2001-2004, ps2dev - http://www.ps2dev.org
 # Licenced under Academic Free License version 2.0
 # Review ps2sdk README & LICENSE files for further details.
-#
-# $Id$
 */
 
 #include "types.h"
@@ -45,7 +43,7 @@ static void SendCmd(void* data);
 //---------------------------------------------------------------------
 typedef int (*intrhandler)(void*);
 
-intrhandler	oldCdHandler=0;
+static intrhandler	oldCdHandler=0;
 
 struct handlerTableEntry{
 	intrhandler	handler;
@@ -65,7 +63,7 @@ static pwoffcb poweroff_button_cb = 0;
 static void *poweroff_button_data = 0;
 static struct t_SifRpcDataQueue qd;
 static struct t_SifRpcServerData sd0;
-static int PowerOffThreadID;
+static int PowerOffThreadID = -1;
 static SifRpcClientData_t client;
 
 static int myCdHandler(void *param)
@@ -112,27 +110,27 @@ static void SendCmd(void* data)
 
 static void PowerOffThread(void *arg)
 {
-	while(1)
-	{
-		SleepThread();
-		sceSifCallRpc(&client, POFF_RPC_BUTTON, 0, NULL, 0, NULL, 0, NULL, NULL);
-	}
+	SleepThread();
+	sceSifCallRpc(&client, POFF_RPC_BUTTON, 0, NULL, 0, NULL, 0, NULL, NULL);
 }
 
 static void InitPowerOffThread(void)
 {
 	iop_thread_t thread;
 
-	thread.thread = &PowerOffThread;
-	thread.attr = TH_C;
-	thread.option = PWROFF_IRX;
-	thread.stacksize = 0x400;
-	thread.priority = 0x27;
-	PowerOffThreadID = CreateThread(&thread);
-	StartThread(PowerOffThreadID, NULL);
+	if(PowerOffThreadID < 0)
+	{
+		thread.thread = &PowerOffThread;
+		thread.attr = TH_C;
+		thread.option = PWROFF_IRX;
+		thread.stacksize = 0x400;
+		thread.priority = 0x27;
+		PowerOffThreadID = CreateThread(&thread);
+		StartThread(PowerOffThreadID, NULL);
 
-	client.server = NULL;
-	while(sceSifBindRpc(&client, PWROFF_IRX, 0) < 0 || client.server == NULL) DelayThread(500);
+		client.server = NULL;
+		while(sceSifBindRpc(&client, PWROFF_IRX, 0) < 0 || client.server == NULL) DelayThread(500);
+	}
 }
 
 //---------------------------------------------------------------------

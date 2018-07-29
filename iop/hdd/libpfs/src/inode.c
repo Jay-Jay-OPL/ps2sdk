@@ -7,14 +7,16 @@
 # Licenced under Academic Free License version 2.0
 # Review ps2sdk README & LICENSE files for further details.
 #
-# $Id$
 # PFS low-level inode manipulation routines
 */
 
 #include <errno.h>
 #include <stdio.h>
+#ifdef _IOP
 #include <sysclib.h>
-#include <iomanX.h>
+#else
+#include <string.h>
+#endif
 
 #include "pfs-opt.h"
 #include "libpfs.h"
@@ -24,14 +26,14 @@ extern u32 pfsMetaSize;
 ///////////////////////////////////////////////////////////////////////////////
 //	Function definitions
 
-void pfsInodePrint(pfs_inode *inode)
+void pfsInodePrint(pfs_inode_t *inode)
 {
 	PFS_PRINTF(PFS_DRV_NAME": pfsInodePrint: Checksum = 0x%lX, Magic = 0x%lX\n", inode->checksum, inode->magic);
 	PFS_PRINTF(PFS_DRV_NAME":     Mode = 0x%X, attr = 0x%X\n", inode->mode, inode->attr);
 	PFS_PRINTF(PFS_DRV_NAME":     size = 0x%08lX%08lX\n", (u32)(inode->size >> 32), (u32)(inode->size));
 }
 
-int pfsInodeCheckSum(pfs_inode *inode)
+int pfsInodeCheckSum(pfs_inode_t *inode)
 {
 	u32 *ptr=(u32 *)inode;
 	u32 sum=0;
@@ -51,9 +53,15 @@ pfs_cache_t *pfsInodeGetData(pfs_mount_t *pfsMount, u16 sub, u32 inode, int *res
 void pfsInodeSetTime(pfs_cache_t *clink)
 {	// set the inode time's in cache
 	pfsGetTime(&clink->u.inode->mtime);
-	memcpy(&clink->u.inode->ctime, &clink->u.inode->mtime, sizeof(pfs_datetime));
-	memcpy(&clink->u.inode->atime, &clink->u.inode->mtime, sizeof(pfs_datetime));
+	memcpy(&clink->u.inode->ctime, &clink->u.inode->mtime, sizeof(pfs_datetime_t));
+	memcpy(&clink->u.inode->atime, &clink->u.inode->mtime, sizeof(pfs_datetime_t));
 	clink->flags|=PFS_CACHE_FLAG_DIRTY;
+}
+
+void pfsInodeSetTimeParent(pfs_cache_t *parent, pfs_cache_t *self)
+{	// set the inode time's in cache
+	pfsInodeSetTime(parent);
+	self->flags|=PFS_CACHE_FLAG_DIRTY;
 }
 
 int pfsInodeSync(pfs_blockpos_t *blockpos, u64 size, u32 used_segments)
@@ -101,7 +109,7 @@ int pfsInodeSync(pfs_blockpos_t *blockpos, u64 size, u32 used_segments)
 
 pfs_cache_t *pfsGetDentriesChunk(pfs_blockpos_t *position, int *result)
 {
-	pfs_blockinfo *bi;
+	pfs_blockinfo_t *bi;
 	pfs_mount_t *pfsMount=position->inode->pfsMount;
 
 	bi = &position->inode->u.inode->data[pfsFixIndex(position->block_segment)];

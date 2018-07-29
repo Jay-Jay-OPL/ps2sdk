@@ -8,6 +8,7 @@ I_ata_device_sce_identify_drive
 I_ata_device_smart_get_status
 I_ata_device_smart_save_attr
 I_ata_device_flush_cache
+I_ata_device_idle_immediate
 atad_IMPORTS_end
 
 cdvdman_IMPORTS_start
@@ -17,6 +18,7 @@ cdvdman_IMPORTS_end
 
 dev9_IMPORTS_start
 I_dev9Shutdown
+I_dev9RegisterShutdownCb
 dev9_IMPORTS_end
 
 intrman_IMPORTS_start
@@ -28,10 +30,6 @@ iomanX_IMPORTS_start
 I_AddDrv
 I_DelDrv
 iomanX_IMPORTS_end
-
-poweroff_IMPORTS_start
-I_AddPowerOffHandler
-poweroff_IMPORTS_end
 
 stdio_IMPORTS_start
 I_printf
@@ -55,6 +53,10 @@ sysmem_IMPORTS_start
 I_AllocSysMemory
 I_FreeSysMemory
 sysmem_IMPORTS_end
+
+thbase_IMPORTS_start
+I_DelayThread
+thbase_IMPORTS_end
 
 thsemap_IMPORTS_start
 I_CreateSema

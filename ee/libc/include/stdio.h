@@ -6,37 +6,35 @@
 # Copyright 2001-2004, ps2dev - http://www.ps2dev.org
 # Licenced under Academic Free License version 2.0
 # Review ps2sdk README & LICENSE files for further details.
-#
-# $Id$
-# LIBC (stdio) type, constant and function declarations.
 */
+
+/**
+ * @file
+ * LIBC (stdio) type, constant and function declarations.
+ */
 
 #ifndef __STDIO_H__
 #define __STDIO_H__
 
-/* include file. */
 #include <stdlib.h>
 #include <stdarg.h>
 #include <stddef.h>
-#include <sys/types.h>
+#include <tamtypes.h>
 #include <io_common.h>
 #include <errno.h>
 #include <fileio.h>
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
+typedef long off_t;
 
 /* Some aliases for the unix 'unistd' functions */
-static __inline__ int open(const char *fname, int flags, ...) { return fioOpen(fname, flags); }
-static __inline__ int close(int handle) { return fioClose(handle); }
-static __inline__ ssize_t read(int handle, void * buffer, size_t size) { return fioRead(handle, buffer, size); }
-static __inline__ ssize_t write(int handle, const void * buffer, size_t size) { return fioWrite(handle, buffer, size); }
-static __inline__ off_t lseek(int handle, off_t position, int wheel) { return fioLseek(handle, position, wheel); }
-static __inline__ off_t tell(int handle) { return fioLseek(handle, 0, 1); }
-static __inline__ int mkdir(const char *path) { return fioMkdir(path); }
-static __inline__ int rmdir(const char *path) { return fioRmdir(path); }
+static inline int open(const char *fname, int flags, ...) { return fioOpen(fname, flags); }
+static inline int close(int handle) { return fioClose(handle); }
+static inline size_t read(int handle, void * buffer, size_t size) { return fioRead(handle, buffer, size); }
+static inline size_t write(int handle, const void * buffer, size_t size) { return fioWrite(handle, buffer, size); }
+static inline off_t lseek(int handle, off_t position, int wheel) { return fioLseek(handle, position, wheel); }
+static inline off_t tell(int handle) { return fioLseek(handle, 0, 1); }
+static inline int mkdir(const char *path) { return fioMkdir(path); }
+static inline int rmdir(const char *path) { return fioRmdir(path); }
 
 /* Some win32 equivalents... baaah */
 #define _open open
@@ -62,11 +60,9 @@ static __inline__ int rmdir(const char *path) { return fioRmdir(path); }
 #define O_TEXT 0
 #endif
 
-
 #define BUFSIZ                         1024
 
 #define _NFILE                         16
-
 
 #define _IOFBF                         0x0000
 #define _IOLBF                         0x0100
@@ -79,30 +75,22 @@ static __inline__ int rmdir(const char *path) { return fioRmdir(path); }
 #define _IORW                          0x0200
 #define _IOMYBUF                       0x0010
 
-
-/* ensure EOF is defined. */
 #ifndef EOF
 #define EOF                            (-1)
 #endif
 
-
 #define FOPEN_MAX                      _NFILE
 #define FILENAME_MAX                   1024
-
 
 #define SEEK_SET                       0
 #define SEEK_CUR                       1
 #define SEEK_END                       2
 
-
-/* ensure fpos_t is defined. */
 #ifndef __FPOS_T_DEFINED
 #define __FPOS_T_DEFINED
 typedef long fpos_t;
-#endif // __FPOS_T_DEFINED
+#endif
 
-
-/* ensure FILE is defined. */
 #ifndef __FILE_DEFINED
 #define __FILE_DEFINED
 typedef struct {
@@ -113,18 +101,18 @@ typedef struct {
   int  has_putback;
   u8   putback;
 } FILE;
-#endif // __FILE_DEFINED
-
+#endif
 
 extern FILE __iob[_NFILE];
-
 
 #define stdin                          (&__iob[0])
 #define stdout                         (&__iob[1])
 #define stderr                         (&__iob[2])
 
+#ifdef __cplusplus
+extern "C" {
+#endif
 
-/* function declarations. */
 void   clearerr(FILE *);
 int    feof(FILE *);
 int    ferror(FILE *);
@@ -168,6 +156,10 @@ int    xscanf(int (*xgetc)(void **), void (*xungetc)(int, void **), void *stream
 int    ungetc(int, FILE *);
 
 int    _fcloseall(void);
+/** all open non-system files with write-access are flushed.
+ * attempts to flush all the open files with write-access. 
+ * @return int; the number of files flushed if successful. else -1.
+ */
 int    _fflushall(void);
 
 int    chdir(const char *path);
@@ -204,5 +196,4 @@ int sio_printf(const char *format, ...);
 }
 #endif
 
-
-#endif // __STDIO_H__
+#endif /* __STDIO_H__ */

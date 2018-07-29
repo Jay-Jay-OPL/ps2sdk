@@ -22,7 +22,7 @@ static char NIFLinkState=0;
 static unsigned char NextNetIFID=0;
 static int NetManIOSemaID;
 
-IRX_ID("Network_Manager", 1, 2);
+IRX_ID("Network_Manager", 2, 1);
 
 extern struct irx_export_table _exp_netman;
 
@@ -135,19 +135,9 @@ void NetManUnregisterNetworkStack(void){
 	SignalSema(NetManIOSemaID);
 }
 
-int NetManNetIFSendPacket(const void *packet, unsigned int length){
-	int result;
-
-	WaitSema(NetManIOSemaID);
-
-	if(MainNetIF!=NULL){
-		result=MainNetIF->xmit(packet, length);
-	}
-	else result=-1;
-
-	SignalSema(NetManIOSemaID);
-
-	return result;
+void NetManNetIFXmit(void){
+	if(MainNetIF != NULL)
+		MainNetIF->xmit();
 }
 
 int NetManIoctl(unsigned int command, void *args, unsigned int args_len, void *output, unsigned int length){
@@ -169,20 +159,27 @@ int NetManNetIFSetLinkMode(int mode){
 	return NetManIoctl(NETMAN_NETIF_IOCTL_ETH_SET_LINK_MODE, &mode, sizeof(mode), NULL, 0);
 }
 
-struct NetManPacketBuffer *NetManNetProtStackAllocRxPacket(unsigned int length){
-	return IsInitialized?MainNetProtStack.AllocRxPacket(length):NULL;
+void *NetManNetProtStackAllocRxPacket(unsigned int length, void **payload){
+	return IsInitialized?MainNetProtStack.AllocRxPacket(length, payload):NULL;
 }
 
-void NetManNetProtStackFreeRxPacket(struct NetManPacketBuffer *packet){
-	if(IsInitialized) MainNetProtStack.FreeRxPacket(packet);
+void NetManNetProtStackFreeRxPacket(void *packet){
+	if(IsInitialized)
+		MainNetProtStack.FreeRxPacket(packet);
 }
 
-int NetManNetProtStackEnQRxPacket(struct NetManPacketBuffer *packet){
-	return IsInitialized?MainNetProtStack.EnQRxPacket(packet):-1;
+void NetManNetProtStackEnQRxPacket(void *packet){
+	if(IsInitialized)
+		MainNetProtStack.EnQRxPacket(packet);
 }
 
-int NetManNetProtStackFlushInputQueue(void){
-	return IsInitialized?MainNetProtStack.FlushInputQueue():-1;
+int NetManTxPacketNext(void **payload){
+	return IsInitialized?MainNetProtStack.NextTxPacket(payload):0;
+}
+
+void NetManTxPacketDeQ(void){
+	if(IsInitialized)
+		MainNetProtStack.DeQTxPacket();
 }
 
 int NetManRegisterNetIF(struct NetManNetIF *NetIF){

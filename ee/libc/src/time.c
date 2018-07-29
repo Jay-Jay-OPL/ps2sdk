@@ -6,10 +6,12 @@
 # Copyright 2001-2005, ps2dev - http://www.ps2dev.org
 # Licenced under Academic Free License version 2.0
 # Review ps2sdk README & LICENSE files for further details.
-#
-# $Id$
-# Standard libc time functions
 */
+
+/**
+ * @file
+ * Standard libc time functions
+ */
 
 #include <time.h>
 #include <kernel.h>
@@ -38,6 +40,7 @@ static int intrOverflow(int ca)
    // ---------------------------------------------------------
    *T_MODE |= (1 << 11);
 
+   ExitHandler();
    return -1;
 }
 
