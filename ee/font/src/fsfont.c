@@ -1,4 +1,6 @@
 #include <stdio.h>
+#include <stdlib.h>
+#include <malloc.h>
 #include <string.h>
 
 #include <draw.h>
@@ -488,6 +490,7 @@ qword_t *fontstudio_print_string(qword_t *q, int context, const unsigned char *s
 	int line = 0;
 
 	float x_orig[100];
+	x_orig[0] = 0;
 
 	// line_num is used to keep track of number of characters per line
 	line_num[0] = 0;

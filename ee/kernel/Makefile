@@ -83,7 +83,7 @@ GLUE_OBJS += SyncDCache.o iSyncDCache.o InvalidDCache.o iInvalidDCache.o
 ### SIO objects
 
 SIO_OBJS = sio_init.o sio_putc.o sio_getc.o sio_write.o sio_read.o sio_puts.o \
-	sio_gets.o sio_getc_block.o sio_flush.o sio_putsn.o
+	sio_gets.o sio_getc_block.o sio_flush.o sio_putsn.o sio_printf.o
 
 ### Config objects
 
@@ -152,7 +152,8 @@ KERNEL_OBJS = ResetEE.o SetGsCrt.o $(EXEC_SYSCALLS) \
 	GetOsdConfigParam2.o GsGetIMR.o iGsGetIMR.o GsPutIMR.o iGsPutIMR.o \
 	SetPgifHandler.o SetVSyncFlag.o SetSyscall.o SifDmaStat.o iSifDmaStat.o \
 	SifSetDma.o iSifSetDma.o SifSetDChain.o iSifSetDChain.o SifSetReg.o \
-	SifGetReg.o $(EXECOSD_SYSCALL) Deci2Call.o PSMode.o MachineType.o GetMemorySize.o _GetGsDxDyOffset.o _InitTLB.o \
+	SifGetReg.o $(EXECOSD_SYSCALL) Deci2Call.o PSMode.o MachineType.o GetMemorySize.o _GetGsDxDyOffset.o \
+	_InitTLB.o SetMemoryMode.o \
 	SifWriteBackDCache.o _SyncDCache.o _InvalidDCache.o __errno.o errno.o \
 	strncpy.o strlen.o memcpy.o memset.o __syscall.o
 
@@ -246,34 +247,34 @@ $(EE_OBJS_DIR)eenull_bin.o: $(EE_OBJS_DIR)eenull_bin.c
 	$(EE_C_COMPILE) $< -c -o $@
 
 $(PS2SDKSRC)/tools/bin2c/bin/bin2c: $(PS2SDKSRC)/tools/bin2c
-	make -C $<
+	$(MAKEREC) $<
 
 $(EE_SRC_DIR)osdsrc/bin/osdsrc.bin: $(EE_SRC_DIR)osdsrc
-	make -C $<
+	$(MAKEREC) $<
 
 $(EE_OBJS_DIR)osdsrc_bin.c: $(EE_SRC_DIR)osdsrc/bin/osdsrc.bin $(PS2SDKSRC)/tools/bin2c/bin/bin2c
 	$(PS2SDKSRC)/tools/bin2c/bin/bin2c $< $@ osdsrc
 
 $(EE_SRC_DIR)tlbsrc/bin/tlbsrc.bin: $(EE_SRC_DIR)tlbsrc
-	make -C $<
+	$(MAKEREC) $<
 
 $(EE_OBJS_DIR)tlbsrc_bin.c: $(EE_SRC_DIR)tlbsrc/bin/tlbsrc.bin $(PS2SDKSRC)/tools/bin2c/bin/bin2c
 	$(PS2SDKSRC)/tools/bin2c/bin/bin2c $< $@ tlbsrc
 
 $(EE_SRC_DIR)srcfile/bin/srcfile.bin: $(EE_SRC_DIR)srcfile
-	make -C $<
+	$(MAKEREC) $<
 
 $(EE_OBJS_DIR)srcfile_bin.c: $(EE_SRC_DIR)srcfile/bin/srcfile.bin $(PS2SDKSRC)/tools/bin2c/bin/bin2c
 	$(PS2SDKSRC)/tools/bin2c/bin/bin2c $< $@ srcfile
 
 $(EE_SRC_DIR)eenull/bin/eenull.bin: $(EE_SRC_DIR)eenull
-	make -C $<
+	$(MAKEREC) $<
 
 $(EE_OBJS_DIR)eenull_bin.c: $(EE_SRC_DIR)eenull/bin/eenull.bin $(PS2SDKSRC)/tools/bin2c/bin/bin2c
 	$(PS2SDKSRC)/tools/bin2c/bin/bin2c $< $@ eenull
 
 clean::
-	make -C $(EE_SRC_DIR)osdsrc clean
-	make -C $(EE_SRC_DIR)tlbsrc clean
-	make -C $(EE_SRC_DIR)srcfile clean
-	make -C $(EE_SRC_DIR)eenull clean
+	$(MAKEREC) $(EE_SRC_DIR)osdsrc clean
+	$(MAKEREC) $(EE_SRC_DIR)tlbsrc clean
+	$(MAKEREC) $(EE_SRC_DIR)srcfile clean
+	$(MAKEREC) $(EE_SRC_DIR)eenull clean

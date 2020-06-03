@@ -11,6 +11,13 @@ This file contains all common code for both EE and IOP SIF management.
 #include "ps2_sbus.h"
 #include "sbus_priv.h"
 
+#ifdef _EE
+#include <stdio.h>
+#include <string.h>
+#else
+#include <sysclib.h>
+#endif
+
 #define SBUS_IRQ_XFER (30)
 #define SBUS_IRQ_EXEC (31)
 
@@ -20,6 +27,8 @@ This file contains all common code for both EE and IOP SIF management.
 // Transfer Types
 #define SIF2_XFER_RECV  (0)
 #define SIF2_XFER_SEND  (1)
+
+extern int sio_printf(const char *format, ...);
 
 static u32 _sif2_req_type = 0;
 static u32 _sif2_req_addr = 0;

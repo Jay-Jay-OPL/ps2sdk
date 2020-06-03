@@ -1,6 +1,9 @@
 # PS2SDK - PS2DEV Open Source Project.
 
-[![Build Status](https://travis-ci.org/ps2dev/ps2sdk.svg?branch=master)](https://travis-ci.org/ps2dev/ps2sdk)
+[![CI](https://github.com/ps2dev/ps2sdk/workflows/CI/badge.svg)](https://github.com/ps2dev/ps2sdk/actions?query=workflow%3ACI)
+[![CI-Docker](https://github.com/ps2dev/ps2sdk/workflows/CI-Docker/badge.svg)](https://github.com/ps2dev/ps2sdk/actions?query=workflow%3ACI-Docker)
+
+[PS2SDK Documentation](https://ps2dev.github.io/ps2sdk/)
 
 Copyright 2001-2004, ps2dev - http://www.ps2dev.org  
 All rights reserved.
@@ -71,7 +74,7 @@ Please review the Makefiles to see how to create your own subproject in the tree
 
 ps2sdk brings together a number of open source projects developed for the Playstation 2®. These projects include ps2lib, ps2drv, libhdd, ps2ip and ps2hid. These projects are now all closed and have been migrated to ps2sdk.
 
-ps2lib was the first library to be released. Created by Gustavo Scotti, the library was released in Octover 2001. Over the years a number of people have contributed to provide the base functionality required to access the internals of the PS2. ps2lib has gone through a number of versions and was last released as Version 2.1 in October 2003.
+ps2lib was the first library to be released. Created by Gustavo Scotti, the library was released in October 2001. Over the years a number of people have contributed to provide the base functionality required to access the internals of the PS2. ps2lib has gone through a number of versions and was last released as Version 2.1 in October 2003.
 
 ps2drv was started by Marcus R. Brown to provide an area to look at more of the internals of the IO Processor and related hardware. It was started in June 2003 and over the last year has grown considerably. ps2drv is where the irx imports method was created used in ps2sdk. ps2drv was last released as Version 1.1 in February 2004.
 

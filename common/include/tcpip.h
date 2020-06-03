@@ -58,6 +58,7 @@
 #define LWIP_NUM_NETIF_CLIENT_DATA	0
 #define LWIP_SOCKET_OFFSET		0
 #define LWIP_IPV6_SEND_ROUTER_SOLICIT	1
+#define DNS_MAX_SERVERS			2
 
 /*
  * Copyright (c) 2001-2003 Swedish Institute of Computer Science.
@@ -1293,13 +1294,6 @@ struct in6_addr {
 #define INADDR_ANY          IPADDR_ANY
 /** 255.255.255.255 */
 #define INADDR_BROADCAST    IPADDR_BROADCAST
-
-/* From include/lwip/sockets.h:  */
-
-struct timeval {
-  long    tv_sec;         /* seconds */
-  long    tv_usec;        /* and microseconds */
-};
 
 /* If your port already typedef's sa_family_t, define SA_FAMILY_T_DEFINED
    to prevent this code from redefining it. */

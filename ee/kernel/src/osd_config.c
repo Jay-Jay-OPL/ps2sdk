@@ -18,6 +18,8 @@
 #include <tamtypes.h>
 #include <kernel.h>
 #include <stdio.h>
+#include <sys/fcntl.h>
+#include <sys/unistd.h>
 #include <string.h>
 #include <osd_config.h>
 
@@ -42,18 +44,14 @@ ConfigParamT10K g_t10KConfig = {540, TV_SCREEN_43, DATE_YYYYMMDD, LANGUAGE_JAPAN
 char g_RomName[15] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
 #endif
 
-extern int (*_ps2sdk_close)(int);
-extern int (*_ps2sdk_open)(const char*, int);
-extern int (*_ps2sdk_read)(int, void*, int);
-
 #ifdef F_GetRomName
 char* GetRomName(char *romname)
 {
 	int fd;
 
-	fd = _ps2sdk_open("rom0:ROMVER", O_RDONLY);
-	_ps2sdk_read(fd, romname, 14);
-	_ps2sdk_close(fd);
+	fd = open("rom0:ROMVER", O_RDONLY);
+	read(fd, romname, 14);
+	close(fd);
 	return romname;
 }
 #endif

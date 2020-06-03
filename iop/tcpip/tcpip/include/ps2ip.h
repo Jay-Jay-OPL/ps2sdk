@@ -21,6 +21,8 @@
 
 #include <tcpip.h>
 
+#include <sys/time.h>
+
 /* From include/lwip/sockets.h:  */
 
 int       lwip_accept(int s, struct sockaddr *addr, socklen_t *addrlen);
@@ -127,7 +129,7 @@ int lwip_getaddrinfo(const char *nodename,
 
 /* From include/lwip/dns.h:  */
 void           dns_setserver(u8 numdns, const ip_addr_t *dnsserver);
-ip_addr_t      dns_getserver(u8 numdns);
+const ip_addr_t* dns_getserver(u8 numdns);
 #endif
 
 /* Compatibility macros.  */

@@ -227,7 +227,7 @@ static void NETMAN_TxThread(void *arg)
 				//Transfer to IOP RAM
 				//Determine mode of transfer.
 				bdNext = UNCACHED_SEG(&FrameBufferStatus[(IOPFrameBufferWrPtr + 1) % NETMAN_RPC_BLOCK_SIZE]);
-				if((NumTx + 1) >= (NETMAN_RPC_BLOCK_SIZE / 4) || bdNext->length == 0)
+				if((NumTx + 1) >= NETMAN_FRAME_GROUP_SIZE || bdNext->length == 0)
 				{
 					//Prepare SIFCMD packet
 					//Record the frame length.
@@ -291,6 +291,9 @@ int NetManSetMainIF(const char *name)
 {
 	int result;
 
+	if (!IsInitialized)
+		return -1;
+
 	WaitSema(NetManIOSemaID);
 
 	strncpy(TransmitBuffer.netifName, name, NETMAN_NETIF_NAME_MAX_LEN);
@@ -306,6 +309,9 @@ int NetManSetMainIF(const char *name)
 int NetManQueryMainIF(char *name)
 {
 	int result;
+	
+	if (!IsInitialized)
+		return -1;
 
 	WaitSema(NetManIOSemaID);
 
@@ -326,6 +332,9 @@ int NetManQueryMainIF(char *name)
 int NetManSetLinkMode(int mode)
 {
 	int result;
+	
+	if (!IsInitialized)
+		return -1;
 
 	WaitSema(NetManIOSemaID);
 

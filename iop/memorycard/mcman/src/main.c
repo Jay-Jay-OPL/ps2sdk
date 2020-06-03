@@ -825,8 +825,8 @@ int McRead(int fd, void *buf, int length) // Export #8
 	else
 		r = mcman_read1(fd, buf, length);
 
-    if (r < 0)
-    	fh->status = 0;
+	if (r < 0)
+		fh->status = 0;
 
 	if (r < -9) {
 		mcman_invhandles(fh->port, fh->slot);
@@ -861,8 +861,8 @@ int McWrite(int fd, void *buf, int length) // Export #9
 	else
 		r = mcman_write1(fd, buf, length);
 
-    if (r < 0)
-    	fh->status = 0;
+	if (r < 0)
+		fh->status = 0;
 
 	if (r < -9) {
 		mcman_invhandles(fh->port, fh->slot);
@@ -916,7 +916,7 @@ int McGetDir(int port, int slot, char *dirname, int flags, int maxent, sceMcTblG
 }
 
 //--------------------------------------------------------------
-int mcman_dread(int fd, fio_dirent_t *dirent)
+int mcman_dread(int fd, io_dirent_t *dirent)
 {
 	register int r;
 	register MC_FHANDLE *fh;
@@ -940,8 +940,8 @@ int mcman_dread(int fd, fio_dirent_t *dirent)
 	else
 		r = mcman_dread1(fd, dirent);
 
-    if (r < 0)
-    	fh->status = 0;
+	if (r < 0)
+		fh->status = 0;
 
 	if (r < -9) {
 		mcman_invhandles(fh->port, fh->slot);
@@ -952,7 +952,7 @@ int mcman_dread(int fd, fio_dirent_t *dirent)
 }
 
 //--------------------------------------------------------------
-int mcman_getstat(int port, int slot, char *filename, fio_stat_t *stat)
+int mcman_getstat(int port, int slot, char *filename, io_stat_t *stat)
 {
 	register int r;
 

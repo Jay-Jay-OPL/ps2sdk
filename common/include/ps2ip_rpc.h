@@ -9,6 +9,7 @@
 
 #include <tamtypes.h>
 #include <tcpip.h>
+#include <sys/time.h>
 
 #define PS2IP_IRX 0xB0125F2
 
@@ -46,13 +47,19 @@ enum PS2IPS_RPC_ID{
 };
 
 typedef struct {
+	s32 domain;
+	s32 type;
+	s32 protocol;
+} socket_pkt;
+
+typedef struct {
 	s32  ssize;
 	s32  esize;
 	u8 *sbuf;
 	u8 *ebuf;
-	u8 sbuffer[16];
-	u8 ebuffer[16];
-} rests_pkt; // sizeof = 48
+	u8 sbuffer[64];
+	u8 ebuffer[64];
+} rests_pkt;
 
 typedef struct {
 	s32 socket;
@@ -62,7 +69,7 @@ typedef struct {
 	struct sockaddr sockaddr; // sizeof = 16
 	s32 malign;
 	/** buffer for sending misaligned portion */
-	u8 malign_buff[16];
+	u8 malign_buff[64];
 } send_pkt;
 
 typedef struct {
@@ -88,6 +95,11 @@ typedef struct {
 	s32 retval;
 	struct sockaddr sockaddr;
 } ret_pkt;
+
+typedef struct {
+	s32 s;
+	s32 backlog;
+} listen_pkt;
 
 typedef struct {
 	s32 s;
@@ -136,8 +148,8 @@ typedef struct {
 
 #ifdef PS2IP_DNS
 struct hostent_res{
-	short h_addrtype;
-	short h_length;
+	s16 h_addrtype;
+	s16 h_length;
 	ip_addr_t h_addr;
 };
 
